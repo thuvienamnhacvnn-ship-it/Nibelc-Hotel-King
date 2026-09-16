@@ -29,7 +29,7 @@ function startServer(port: number): Promise<ChildProcess> {
       output += chunk;
       if (output.includes(`READY ${port}`)) {
         clearTimeout(timer);
-        resolve(child);
+        resolve(Object.assign(child, { port }));
       }
     });
     child.stderr!.on("data", (chunk) => (output += chunk));
@@ -41,9 +41,10 @@ function startServer(port: number): Promise<ChildProcess> {
 }
 
 export default async function setup() {
-  const port = await freePort();
-  const child = await startServer(port);
-  process.env.DATABASE_URL = `postgresql://postgres:postgres@127.0.0.1:${port}/postgres`;
+  // TEST_DATABASE_URL: chạy trên PostgreSQL thật (database RỖNG dành riêng cho test, sẽ bị ghi dữ liệu thử).
+  const external = process.env.TEST_DATABASE_URL;
+  const child = external ? null : await startServer(await freePort());
+  process.env.DATABASE_URL = external ?? `postgresql://postgres:postgres@127.0.0.1:${(child as ChildProcess & { port: number }).port}/postgres`;
   process.env.DB_POOL_MAX = "6";
 
   const { runMigrations } = await import("../src/lib/migrations");
@@ -52,6 +53,7 @@ export default async function setup() {
   await closePool();
 
   return async () => {
+    if (!child) return;
     child.removeAllListeners("exit");
     child.kill("SIGTERM");
   };

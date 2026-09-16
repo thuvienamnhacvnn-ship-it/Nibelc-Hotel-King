@@ -26,7 +26,12 @@ const { handlers } = await import("../src/worker/handlers");
 const { addDays, todayOps } = await import("../src/lib/time");
 type Role = import("../src/modules/auth/permissions").Role;
 
-export const DEMO_PASSWORD = "Demo-Nibelc-2026";
+// Máy dev dùng mật khẩu chung ghi trong README. Server mở ra Internet PHẢI đặt DEMO_PASSWORD riêng.
+export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "Demo-Nibelc-2026";
+if (process.env.NODE_ENV === "production" && !process.env.DEMO_PASSWORD) {
+  console.error("Đang ở production: đặt DEMO_PASSWORD riêng trước khi seed (không dùng mật khẩu DEMO công khai).");
+  process.exit(1);
+}
 
 /** Service tạo booking/khách/việc không biết là DEMO — gắn cờ cho mọi bản ghi của tổ chức DEMO. */
 async function markDemo(orgId: string) {
@@ -263,7 +268,7 @@ async function main() {
   );
   console.log("Đã tạo dữ liệu DEMO:", counts);
   console.log(`Đăng nhập: ${users.map((u) => u[0]).join(", ")}`);
-  console.log(`Mật khẩu chung (chỉ DEMO): ${DEMO_PASSWORD}`);
+  console.log(process.env.DEMO_PASSWORD ? "Mật khẩu: giá trị DEMO_PASSWORD đã đặt" : `Mật khẩu chung (chỉ DEMO): ${DEMO_PASSWORD}`);
   void b2;
   void b7;
 }
