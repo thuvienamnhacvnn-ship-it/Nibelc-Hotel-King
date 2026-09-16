@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { type ApiError, callApi, useAction } from "@/components/client";
 import styles from "./mobile.module.css";
 
@@ -78,6 +78,8 @@ export interface FlowProps {
   vacancyOk: boolean;
   vacancyMessage: string;
   checklist: { group: string; items: { id: string; label: string; checked: boolean }[] }[];
+  /** Khối checklist + ảnh + Hoàn thành khi đang dọn (module photos). Không truyền thì dùng checklist đơn giản bên dưới. */
+  inProgressSlot?: ReactNode;
 }
 
 const INCIDENT_KINDS: [string, string][] = [
@@ -146,7 +148,8 @@ export function MobileTaskFlow(p: FlowProps) {
         </>
       ) : null}
 
-      {p.status === "in_progress" ? (
+      {p.status === "in_progress" && p.inProgressSlot ? p.inProgressSlot : null}
+      {p.status === "in_progress" && !p.inProgressSlot ? (
         <>
           {p.checklist.map((g) => (
             <div key={g.group} className={styles.group}>

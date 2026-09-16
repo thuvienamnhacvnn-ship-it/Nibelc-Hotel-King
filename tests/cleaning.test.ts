@@ -14,7 +14,7 @@ import {
   toggleChecklistItem,
 } from "@/modules/cleaning/service";
 import { readinessForUnits } from "@/modules/cleaning/readiness";
-import { bookingInput, expectCode, makeFixture, runWorker, tasksFor } from "./helpers";
+import { attachRequiredPhotos, bookingInput, expectCode, makeFixture, runWorker, tasksFor } from "./helpers";
 
 async function version(bookingId: string) {
   return (await queryOne<{ version: number }>("SELECT version FROM bookings WHERE id = $1", [bookingId]))!.version;
@@ -95,6 +95,7 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     const items = await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id]);
     for (const item of items) await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
     const incident = await reportIncident(cleaner, task.id, { kind: "maintenance", severity: "blocking", description: "Vòi nước rò" });
+    await attachRequiredPhotos(task.id, cleaner.userId!);
     await finishTask(cleaner, task.id);
     await expectCode(inspectTask(f.actors.vn_manager, task.id, { result: "pass" }), "forbidden");
     await expectCode(inspectTask(f.actors.bp_staff, task.id, { result: "pass" }), "blocking_incident");
@@ -123,6 +124,7 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     await startTask(cleaner, task.id);
     const items = await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id]);
     for (const item of items) await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
+    await attachRequiredPhotos(task.id, cleaner.userId!);
     await finishTask(cleaner, task.id);
     // N2: kiểm không đạt → checklist phải tích lại
     await inspectTask(f.actors.bp_staff, task.id, { result: "fail", note: "Nhà tắm còn bẩn" });
@@ -183,6 +185,7 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
       await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
     }
     const minor = await reportIncident(cleaner, task.id, { kind: "missing_supplies", severity: "low", description: "Thiếu giấy vệ sinh" });
+    await attachRequiredPhotos(task.id, cleaner.userId!);
     await finishTask(cleaner, task.id);
     await inspectTask(f.actors.bp_staff, task.id, { result: "pass" });
     await resolveIncident(f.actors.bp_coordinator, minor.id, "Đã bổ sung");
@@ -217,5 +220,27 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     await expectCode(declineTask(mine, task.id, " "), "invalid_input");
     await declineTask(mine, task.id, "Trùng ca khác");
     expect((await tasksFor(f.orgId))[0].status).toBe("pending_assignment");
+  });
+});
+
+describe("Ảnh bằng chứng bắt buộc", () => {
+  it("thiếu ảnh ở mục cần ảnh thì không hoàn thành được, dù gọi thẳng service", async () => {
+    const f = await makeFixture();
+    const b = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, "2026-10-01", "2026-10-03"));
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_in", expectedVersion: await version(b.id) });
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_out", expectedVersion: await version(b.id) });
+    await runWorker();
+    const task = (await tasksFor(f.orgId))[0];
+    const cleaner = f.cleaners[0];
+    await assignTask(f.actors.bp_coordinator, task.id, { userId: cleaner.userId! });
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    for (const item of await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id])) {
+      await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
+    }
+    const err = await expectCode(finishTask(cleaner, task.id), "photo_evidence_missing");
+    expect((err.details as { missing: string[] }).missing).toEqual(["Nhà tắm"]);
+    await attachRequiredPhotos(task.id, cleaner.userId!);
+    await finishTask(cleaner, task.id);
   });
 });

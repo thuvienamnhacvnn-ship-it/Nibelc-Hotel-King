@@ -1,0 +1,62 @@
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.tryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.tryResult {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 8px;
+}
+.answer {
+  white-space: pre-wrap;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--border, rgba(127, 127, 127, 0.35));
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 160px;
+}
+.question {
+  min-width: 220px;
+  max-width: 380px;
+}
+.answerCell {
+  min-width: 220px;
+  max-width: 360px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.version {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}
+.events {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.table td {
+  vertical-align: top;
+}

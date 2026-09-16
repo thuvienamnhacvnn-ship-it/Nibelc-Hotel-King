@@ -7,9 +7,12 @@ import { formatDateVi, formatInstant, now } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
 import { INCIDENT_KIND_LABELS, INCIDENT_SEVERITY_LABELS, getTaskDetail } from "@/modules/cleaning/queries";
 import { TASK_KIND_LABELS, TASK_STATUS_LABELS } from "@/modules/cleaning/service";
+import { getTaskEvidence } from "@/modules/photos/queries";
+import { PHOTO_FLAG_LABELS } from "@/modules/photos/service";
 import { type ChangeValues, changeRows, statusTone } from "../../../../(app)/cleaning/_components/format";
 import styles from "../../../mobile.module.css";
 import { MobileTaskFlow } from "../../../mobile-client";
+import { EvidenceChecklist } from "./photo-flow";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Việc dọn" };
@@ -38,6 +41,12 @@ export default async function MobileTaskPage({ params }: { params: Promise<{ id:
   }
   const mapsUrl = t.property_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.property_address)}` : null;
   const openIncidents = incidents.filter((i) => i.status !== "resolved");
+  const evidence = t.status === "in_progress" ? await getTaskEvidence(actor, t.id) : null;
+  const evidenceGroups = new Map<string, { id: string; label: string; checked: boolean; requiresPhoto: boolean }[]>();
+  for (const i of checklist) {
+    const key = i.category ?? "Checklist";
+    evidenceGroups.set(key, [...(evidenceGroups.get(key) ?? []), { id: i.id, label: i.label, checked: i.checked, requiresPhoto: i.requires_photo }]);
+  }
 
   return (
     <>
@@ -150,6 +159,26 @@ export default async function MobileTaskPage({ params }: { params: Promise<{ id:
         vacancyOk={t.vacancy.ok}
         vacancyMessage={t.vacancy.message}
         checklist={[...groups.entries()].map(([group, items]) => ({ group, items }))}
+        inProgressSlot={
+          evidence ? (
+            <EvidenceChecklist
+              taskId={t.id}
+              version={t.version}
+              canAct={t.assigned_to === actor.userId || can(actor, "cleaning.manage")}
+              canManage={can(actor, "cleaning.manage")}
+              checklist={[...evidenceGroups.entries()].map(([group, items]) => ({ group, items }))}
+              serverPhotos={evidence.photos.map((ph) => ({
+                id: ph.id,
+                checklistItemId: ph.checklistItemId,
+                clientUploadId: ph.clientUploadId,
+                flags: ph.flags,
+                receivedAtLabel: `Máy chủ nhận ${formatInstant(ph.receivedAt, tz)}`,
+                mine: ph.uploadedBy === actor.userId,
+              }))}
+              flagLabels={PHOTO_FLAG_LABELS}
+            />
+          ) : undefined
+        }
       />
     </>
   );

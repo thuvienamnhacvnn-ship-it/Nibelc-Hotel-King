@@ -8,10 +8,12 @@ import { can } from "@/modules/auth/actor";
 import { BOOKING_STATUS_LABELS, CHANNEL_LABELS, STAY_STATUS_LABELS } from "@/modules/booking/types";
 import { type BookingBrief, INCIDENT_KIND_LABELS, INCIDENT_SEVERITY_LABELS, TASK_EVENT_LABELS, type TaskEventRow, getTaskDetail } from "@/modules/cleaning/queries";
 import { TASK_KIND_LABELS, TASK_STATUS_LABELS } from "@/modules/cleaning/service";
+import { getTaskEvidence } from "@/modules/photos/queries";
 import styles from "../cleaning.module.css";
 import { type ChangeValues, changeRows, statusTone } from "../_components/format";
 import { ChangeTable, ResolveIncidentButton, TaskActions } from "../_components/task-actions";
 import { toActionTask } from "../_components/task-card";
+import { EvidenceSection, InspectionEvidenceNotice } from "./evidence";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Chi tiết việc dọn" };
@@ -32,6 +34,7 @@ export default async function CleaningTaskPage({ params }: { params: Promise<{ i
   const action = toActionTask(t, tz);
   const canBooking = can(actor, "booking.view");
   const pending = t.pending_change as (ChangeValues & { reason?: string }) | null;
+  const evidence = await getTaskEvidence(actor, t.id);
 
   const groups = new Map<string, typeof checklist>();
   for (const item of checklist) {
@@ -70,6 +73,8 @@ export default async function CleaningTaskPage({ params }: { params: Promise<{ i
           {t.vacancy.message}
         </Notice>
       ) : null}
+
+      {t.status === "awaiting_inspection" ? <InspectionEvidenceNotice evidence={evidence} /> : null}
 
       {!perms.manage && !perms.approve ? <Notice tone="info">Chế độ chỉ xem — bạn không có quyền thao tác việc này.</Notice> : null}
 
@@ -125,7 +130,10 @@ export default async function CleaningTaskPage({ params }: { params: Promise<{ i
             </div>
           ))
         )}
-        <div className="small faint">Ảnh bằng chứng và nhận xét AI: Đợt 2.</div>
+      </Card>
+
+      <Card title={`Ảnh bằng chứng (${evidence.photos.length})`}>
+        <EvidenceSection evidence={evidence} checklist={checklist} tz={tz} canReview={perms.manage || perms.approve} taskId={t.id} />
       </Card>
 
       <Card title={`Sự cố (${incidents.length})`} pad={false}>

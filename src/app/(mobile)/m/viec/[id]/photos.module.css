@@ -1,0 +1,89 @@
+/* Ảnh bằng chứng trên điện thoại: một cột, nút ≥ 48px, trạng thái tải bằng chữ đậm (không chỉ bằng màu). */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.photos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 12px;
+  padding: 8px 0 8px 12px;
+  border-left: 3px solid var(--border-strong);
+}
+.photoHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.photoHead > span {
+  flex: 1;
+}
+.hiddenInput {
+  display: none;
+}
+.shoot {
+  min-height: 48px;
+  min-width: 120px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.photoRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.thumb,
+.thumbEmpty {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-muted);
+}
+.thumbEmpty {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.photoMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 15px;
+}
+.ok {
+  font-weight: 800;
+  color: var(--ok);
+}
+.need {
+  font-weight: 800;
+  color: var(--danger);
+}
+.busy {
+  font-weight: 800;
+  color: var(--info);
+}
+.flag {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.actions :global(.btn),
+.small {
+  min-height: 48px;
+}

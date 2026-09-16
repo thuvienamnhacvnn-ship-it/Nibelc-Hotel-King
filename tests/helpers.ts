@@ -114,3 +114,18 @@ export async function expectCode(promise: Promise<unknown>, code: string) {
   }
   throw new Error(`Mong đợi lỗi ${code} nhưng thao tác thành công`);
 }
+
+/** Gắn ảnh giả (chỉ bản ghi, không file) cho mọi mục checklist cần ảnh — để test luồng hoàn thành. */
+export async function attachRequiredPhotos(taskId: string, uploaderUserId: string) {
+  const items = await query<{ id: string; org_id: string; unit_id: string }>(
+    `SELECT i.id, i.org_id, t.unit_id FROM task_checklist_items i JOIN cleaning_tasks t ON t.id = i.task_id WHERE i.task_id = $1 AND i.requires_photo`,
+    [taskId],
+  );
+  for (const it of items) {
+    await query(
+      `INSERT INTO task_photos (org_id, task_id, checklist_item_id, unit_id, storage_key, mime_type, bytes, sha256, client_upload_id, uploaded_by)
+       VALUES ($1,$2,$3,$4,'test/none.jpg','image/jpeg',1000,$5,$6,$7)`,
+      [it.org_id, taskId, it.id, it.unit_id, `sha-${uid()}`, `test-${uid()}`, uploaderUserId],
+    );
+  }
+}

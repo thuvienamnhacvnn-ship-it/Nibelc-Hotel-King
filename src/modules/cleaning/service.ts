@@ -244,6 +244,17 @@ export async function finishTask(actor: Actor, taskId: string, input: { expected
     if (missing.rows.length) {
       throw new AppError("checklist_incomplete", `Còn ${missing.rows.length} mục checklist chưa xong.`, 422, { missing: missing.rows.map((r) => r.label) });
     }
+    // Mục checklist cần ảnh phải có ít nhất một ảnh còn hiệu lực — kiểm trong cùng giao dịch (không để khe hở xoá ảnh lúc bấm).
+    const noPhoto = await tx.query<{ label: string }>(
+      `SELECT i.label FROM task_checklist_items i
+        WHERE i.task_id = $1 AND i.requires_photo
+          AND NOT EXISTS (SELECT 1 FROM task_photos p WHERE p.task_id = i.task_id AND p.checklist_item_id = i.id AND p.status = 'active')
+        ORDER BY i.sort_order`,
+      [taskId],
+    );
+    if (noPhoto.rows.length) {
+      throw new AppError("photo_evidence_missing", `Còn ${noPhoto.rows.length} mục cần ảnh bằng chứng chưa có ảnh.`, 422, { missing: noPhoto.rows.map((r) => r.label) });
+    }
     await setReadinessForUnit(tx, actor.orgId, task.unit_id, "inspection_pending", { taskId: task.id, userId: actor.userId });
     return move(tx, actor, task, "awaiting_inspection", "finished", { finished_at: now(), note: input.note ?? null });
   });
