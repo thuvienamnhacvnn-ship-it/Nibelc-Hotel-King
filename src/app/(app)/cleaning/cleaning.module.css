@@ -67,6 +67,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
+  padding: 12px 16px;
 }
 .filters :global(.field) {
   min-width: 150px;
@@ -107,4 +108,24 @@
   letter-spacing: 0.04em;
   color: var(--text-muted);
   margin: 0 0 6px;
+}
+
+@media (max-width: 900px) {
+  .filters {
+    padding: 0;
+  }
+  .filters :global(.field) {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+  .filters > :global(.btn) {
+    flex: 1;
+  }
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .listRow {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
 }

@@ -68,3 +68,149 @@
     grid-column: auto;
   }
 }
+
+.filterPad {
+  padding: 16px;
+}
+
+/* ───── Điện thoại: thẻ booking ───── */
+.mList {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+}
+.mList > li + li {
+  margin-top: 10px;
+}
+.mCard {
+  display: block;
+  padding: 14px;
+  border-radius: 16px;
+  background: #f8fafd;
+  border: 1px solid #e3e9f1;
+  color: var(--text);
+  position: relative;
+  overflow: hidden;
+}
+.mCard:hover {
+  text-decoration: none;
+}
+.mCard:active {
+  transform: scale(0.99);
+  background: #f1f5fa;
+}
+.mCard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--navy-600);
+}
+.mConflict::before {
+  background: var(--danger);
+}
+.mCancelled {
+  opacity: 0.62;
+}
+.mCancelled::before {
+  background: var(--border-strong);
+}
+.mTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mUnit {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--navy-900);
+  line-height: 1.2;
+}
+.mGuest {
+  margin-top: 2px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.mDates {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.mDateLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.mDate {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--navy-900);
+  font-variant-numeric: tabular-nums;
+}
+.mNights {
+  position: relative;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy-600);
+}
+.mNights::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 2px dashed var(--navy-100);
+}
+.mNights span {
+  position: relative;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--navy-50);
+}
+.mMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.mNote {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .filterPad {
+    padding: 0;
+  }
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .checks {
+    grid-column: 1 / -1;
+  }
+}

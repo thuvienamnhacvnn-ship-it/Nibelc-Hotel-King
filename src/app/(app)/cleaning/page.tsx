@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FilterPanel } from "@/components/client";
 import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader } from "@/components/ui";
 import { requireActor } from "@/lib/session";
 import { addDays, formatDateVi, formatInstant, isValidDate, localToUtc, now, todayOps, tzAbbrev, weekdayVi } from "@/lib/time";
@@ -77,6 +78,8 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
         }
       />
 
+      <div className="card">
+      <FilterPanel active={(status ? 1 : 0) + (property ? 1 : 0)} label="Lọc ngày, trạng thái, nhà">
       <form className={styles.filters} method="get" action="/cleaning">
         <div className="field">
           <label htmlFor="f-date">Ngày</label>
@@ -115,6 +118,8 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
         <span className="spacer" />
         <span className="small faint">Cập nhật {formatInstant(now(), tz)}</span>
       </form>
+      </FilterPanel>
+      </div>
 
       {!perms.manage && !perms.approve ? (
         <Notice tone="info" title="Chế độ chỉ xem">

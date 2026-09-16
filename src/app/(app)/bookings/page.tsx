@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FilterPanel } from "@/components/client";
 import { Badge, Card, DemoBadge, EmptyState, PageHeader, Pagination } from "@/components/ui";
 import { pageParams } from "@/lib/http";
 import { formatMoney } from "@/lib/money";
@@ -26,6 +27,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
   const showMoney = can(actor, "revenue.view");
   const exportHref = `/api/v1/bookings/export?${filtersToQuery(filters)}`;
   const hasFilter = filtersToQuery({ ...filters, sort: "check_in_asc" }) !== "";
+  const activeFilters = [filters.from, filters.to, filters.propertyId, filters.unitId, filters.channel, filters.bookingStatus, filters.stayStatus, filters.q, filters.pendingOnly || null, filters.conflictOnly || null].filter(Boolean).length;
 
   return (
     <div className="stack">
@@ -46,7 +48,9 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
         }
       />
 
-      <Card>
+      <Card pad={false}>
+        <FilterPanel active={activeFilters}>
+        <div className={styles.filterPad}>
         <form method="get" className={styles.filters}>
           <div className="field">
             <label htmlFor="f-from">Từ ngày</label>
@@ -150,6 +154,8 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
             ) : null}
           </div>
         </form>
+        </div>
+        </FilterPanel>
       </Card>
 
       <Card pad={false}>
@@ -158,8 +164,14 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
             {hasFilter ? "Thử mở rộng khoảng ngày hoặc bỏ bớt điều kiện lọc." : "Booking sẽ xuất hiện khi được tạo tay, nhập Excel hoặc nhận từ kênh."}
           </EmptyState>
         ) : (
-          <div className="table-wrap">
-            <table className={`table ${styles.table}`}>
+          <>
+          <ul className={`show-mobile ${styles.mList}`}>
+            {data.items.map((b) => (
+              <MobileBookingCard key={b.id} b={b} showGuest={showGuest} showMoney={showMoney} tz={actor.timezone} />
+            ))}
+          </ul>
+          <div className="table-wrap hide-mobile">
+            <table className={`table ${styles.table}`} data-mobile="scroll">
               <thead>
                 <tr>
                   <th className="num">STT</th>
@@ -260,11 +272,59 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
               </tbody>
             </table>
           </div>
+          </>
         )}
         <div className="card-pad">
           <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hrefFor={(p) => `/bookings?${filtersToQuery(filters, { page: p })}`} />
         </div>
       </Card>
     </div>
+  );
+}
+
+type BookingRow = Awaited<ReturnType<typeof listBookings>>["items"][number];
+
+/** Thẻ booking trên điện thoại: phòng + trạng thái nổi bật, ngày ở dạng dòng thời gian, cả thẻ bấm được. */
+function MobileBookingCard({ b, showGuest, showMoney, tz }: { b: BookingRow; showGuest: boolean; showMoney: boolean; tz: string }) {
+  const units = b.allocations.map((a) => a.unit_code).join(" · ") || "Chưa xếp phòng";
+  const conflict = b.open_conflicts > 0 || b.allocations.some((a) => a.status === "conflict");
+  return (
+    <li>
+      <Link href={`/bookings/${b.id}`} className={`${styles.mCard} ${b.booking_status === "cancelled" ? styles.mCancelled : ""} ${conflict ? styles.mConflict : ""}`}>
+        <div className={styles.mTop}>
+          <div className={styles.mUnit}>{units}</div>
+          <Badge tone={bookingTone(b.booking_status)}>{BOOKING_STATUS_LABELS[b.booking_status]}</Badge>
+        </div>
+        {showGuest && b.guest_name ? <div className={styles.mGuest}>{b.guest_name}</div> : null}
+        <div className={styles.mDates}>
+          <div>
+            <div className={styles.mDateLabel}>Nhận</div>
+            <div className={styles.mDate}>{formatDateVi(b.check_in_date).slice(0, 5)}</div>
+          </div>
+          <div className={styles.mNights}>
+            <span>{b.nights} đêm</span>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className={styles.mDateLabel}>Trả</div>
+            <div className={styles.mDate}>{formatDateVi(b.check_out_date).slice(0, 5)}</div>
+          </div>
+        </div>
+        <div className={styles.mMeta}>
+          <span className="strong">{CHANNEL_LABELS[b.source_channel] ?? b.source_channel}</span>
+          <span>{b.external_ref ?? "(không mã)"}</span>
+          {b.total_guests != null ? <span>{b.total_guests} khách</span> : null}
+          {b.eta_local ? <span>ETA {b.eta_local}</span> : null}
+          {showMoney && b.total_amount_minor != null ? <span className="strong">{formatMoney(b.total_amount_minor, b.currency)}</span> : null}
+        </div>
+        <div className={styles.mBadges}>
+          <Badge tone={stayTone(b.stay_status)}>{STAY_STATUS_LABELS[b.stay_status]}</Badge>
+          <Badge tone="neutral">{PAYMENT_STATUS_LABELS[b.payment_status]}</Badge>
+          {b.pending_changes ? <Badge tone="warn">{b.pending_changes} thay đổi chờ</Badge> : null}
+          {conflict ? <Badge tone="danger">Xung đột</Badge> : null}
+          <DemoBadge show={b.is_demo} />
+        </div>
+        {b.ops_note ? <div className={styles.mNote}>{b.ops_note}</div> : null}
+      </Link>
+    </li>
   );
 }

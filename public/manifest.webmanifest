@@ -1,10 +1,35 @@
 {
+  "id": "/",
   "name": "Vietduc Hotel",
   "short_name": "VD Hotel",
+  "description": "Vận hành căn hộ cho thuê — booking, lịch phòng, dọn phòng, hộp thư",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f5f7fa",
+  "orientation": "portrait",
+  "background_color": "#0b1f3a",
   "theme_color": "#0b1f3a",
   "lang": "vi",
-  "icons": [{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }]
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Booking",
+      "url": "/bookings"
+    },
+    {
+      "name": "Lịch phòng",
+      "url": "/lich"
+    },
+    {
+      "name": "Hộp thư",
+      "url": "/hop-thu"
+    }
+  ]
 }

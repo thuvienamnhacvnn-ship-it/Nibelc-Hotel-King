@@ -120,3 +120,38 @@ export function OfflineBanner() {
   if (!offline) return null;
   return <div className="offline-banner" role="status">Mất mạng — dữ liệu trên màn hình có thể đã cũ, thao tác chưa gửi được</div>;
 }
+
+/** Đoạn mô tả đầu trang: điện thoại chỉ hiện 2 dòng, chạm để xem đủ (máy tính luôn hiện đủ). */
+export function ClampText({ children }: { children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <p data-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+      {children}
+    </p>
+  );
+}
+
+/**
+ * Khung bộ lọc: máy tính luôn mở; điện thoại gập lại thành một dòng "Bộ lọc" (hiện số điều kiện đang áp dụng),
+ * chạm để mở — danh sách hiện ngay dưới đầu trang thay vì phải cuộn qua cả form.
+ */
+export function FilterPanel({ active = 0, children, label = "Bộ lọc & tìm kiếm" }: { active?: number; children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="filter-panel" data-open={open}>
+      <button type="button" className="filter-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <path d="M4 6h16M7 12h10M10 18h4" />
+        </svg>
+        <span className="spacer" style={{ textAlign: "left" }}>
+          {label}
+        </span>
+        {active ? <span className="badge badge-info">{active} đang lọc</span> : null}
+        <span aria-hidden style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform .2s" }}>
+          ▾
+        </span>
+      </button>
+      <div className="filter-body">{children}</div>
+    </div>
+  );
+}

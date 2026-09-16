@@ -106,3 +106,55 @@
   flex-direction: column;
   gap: 4px;
 }
+
+.listPane,
+.detailPane {
+  min-width: 0;
+}
+.back {
+  font-weight: 700;
+  padding: 4px 2px;
+}
+
+/* Điện thoại: kiểu app nhắn tin — danh sách HOẶC hội thoại, không hiện cả hai */
+@media (max-width: 900px) {
+  .page[data-selected="true"] > :not(.layout),
+  .layout[data-selected="true"] .listPane,
+  .layout[data-selected="false"] .detailPane {
+    display: none;
+  }
+  .connectors {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -14px;
+    padding: 2px 14px 6px;
+  }
+  .connectors::-webkit-scrollbar {
+    display: none;
+  }
+  .connector {
+    flex: none;
+    min-width: 240px;
+  }
+  .list {
+    max-height: none;
+  }
+  .item {
+    padding: 14px;
+  }
+  .thread {
+    max-height: none;
+    overflow: visible;
+  }
+  .bubble {
+    max-width: 92%;
+    border-radius: 16px;
+  }
+  .out {
+    border-bottom-right-radius: 4px;
+  }
+  .in {
+    border-bottom-left-radius: 4px;
+  }
+}

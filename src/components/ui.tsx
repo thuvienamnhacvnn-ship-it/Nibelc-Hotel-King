@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ClampText } from "./client";
 
 /** Các khối giao diện dùng chung (server-safe). Màn hình mới phải dùng những khối này để thống nhất. */
 
@@ -28,7 +29,7 @@ export function PageHeader({ title, description, actions }: { title: ReactNode; 
     <div className="page-header">
       <div>
         <h1>{title}</h1>
-        {description ? <p>{description}</p> : null}
+        {description ? <ClampText>{description}</ClampText> : null}
       </div>
       {actions ? <div className="row">{actions}</div> : null}
     </div>

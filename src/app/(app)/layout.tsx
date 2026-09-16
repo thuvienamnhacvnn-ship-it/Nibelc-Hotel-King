@@ -3,14 +3,15 @@ import { navFor } from "@/components/nav";
 import { LogoutButton, Shell } from "@/components/shell";
 import { requireActor } from "@/lib/session";
 import { formatDateVi, now, todayOps, tzAbbrev, weekdayVi } from "@/lib/time";
+import { can } from "@/modules/auth/actor";
 import { ROLE_LABELS } from "@/modules/auth/permissions";
-import { backgroundStatus, orgInfo } from "@/modules/system/queries";
+import { backgroundStatus, navBadges, orgInfo } from "@/modules/system/queries";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const actor = await requireActor();
-  const [org, bg] = await Promise.all([orgInfo(actor.orgId), backgroundStatus(actor.orgId)]);
+  const [org, bg, badges] = await Promise.all([orgInfo(actor.orgId), backgroundStatus(actor.orgId), navBadges(actor)]);
   const today = todayOps(actor.timezone);
   const topbar = (
     <>
@@ -34,15 +35,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {bg.dead ? <Badge tone="danger">{bg.dead} sự kiện nền lỗi</Badge> : null}
       </div>
       <div className="topbar-meta">
-        <span className="hide-mobile">
+        <span>
           {actor.fullName} · {actor.role ? ROLE_LABELS[actor.role] : ""}
         </span>
         <LogoutButton />
       </div>
     </>
   );
+  const quickActions = [
+    ...(can(actor, "booking.create") ? [{ href: "/bookings/moi", label: "Tạo booking", icon: "Plus" }] : []),
+    ...(can(actor, "import.preview") ? [{ href: "/nhap-excel", label: "Nhập Excel", icon: "FileSpreadsheet" }] : []),
+  ];
   return (
-    <Shell nav={navFor(actor).map((g) => ({ group: g.group, items: g.items.map(({ href, label, icon }) => ({ href, label, icon })) }))} topbar={topbar}>
+    <Shell
+      nav={navFor(actor).map((g) => ({ group: g.group, items: g.items.map(({ href, label, icon }) => ({ href, label, icon })) }))}
+      topbar={topbar}
+      mobile={{
+        orgName: org?.name ?? "",
+        isDemo: !!org?.is_demo,
+        userName: actor.fullName,
+        roleLabel: actor.role ? ROLE_LABELS[actor.role] : "",
+        dateLabel: `${weekdayVi(today)} ${formatDateVi(today).slice(0, 5)} · ${tzAbbrev(now(), actor.timezone)}`,
+        workerAlive: bg.workerAlive,
+        badges,
+        quickActions,
+      }}
+    >
       {children}
     </Shell>
   );

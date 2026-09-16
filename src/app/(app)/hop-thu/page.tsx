@@ -83,13 +83,13 @@ export default async function InboxPage({ searchParams }: { searchParams: SP }) 
   const botAutoSend = sendingOpen && !switches.agentGuest.paused;
 
   return (
-    <div className="stack">
+    <div className={`stack ${styles.page}`} data-selected={selectedId ? "true" : "false"}>
       <PageHeader
         title="Hộp thư & tổng đài"
         description="Tin WhatsApp của khách, nhân viên và nhóm. Bot chỉ soạn nháp từ Q&A đã duyệt; mã cửa, hoàn tiền, sự cố hoặc không có căn cứ thì chuyển người. Trạng thái gửi là kết quả thật từ kênh."
       />
 
-      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <div className={`row ${styles.connectors}`} style={{ gap: 8, flexWrap: "wrap" }}>
         {connectors.length === 0 ? (
           <Notice tone="warn" title="Chưa có connector nhắn tin nào">
             Tạo connector tổng đài bằng <span className="mono">scripts/seed-whatsapp-connector.ts</span>. Chưa có connector thì không nhận được tin.
@@ -128,7 +128,8 @@ export default async function InboxPage({ searchParams }: { searchParams: SP }) 
         </Notice>
       ) : null}
 
-      <div className={styles.layout}>
+      <div className={styles.layout} data-selected={selectedId ? "true" : "false"}>
+        <div className={styles.listPane}>
         <Card title={`Hội thoại (${list.total})`} pad={false}>
           <div className={`card-pad ${styles.filters}`}>
             <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
@@ -206,8 +207,14 @@ export default async function InboxPage({ searchParams }: { searchParams: SP }) 
             <Pagination page={list.page} pageSize={list.pageSize} total={list.total} hrefFor={(p) => href({ page: p > 1 ? String(p) : null })} />
           </div>
         </Card>
+        </div>
 
-        <div className="stack">
+        <div className={`stack ${styles.detailPane}`}>
+          {selectedId ? (
+            <Link href={href({ c: null })} className={`show-mobile ${styles.back}`}>
+              ← Tất cả hội thoại
+            </Link>
+          ) : null}
           {!selectedId ? (
             <Card>
               <EmptyState title="Chọn một hội thoại">Chọn hội thoại ở danh sách bên trái để xem tin và xử lý.</EmptyState>

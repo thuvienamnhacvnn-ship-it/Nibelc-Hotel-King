@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Stat } from "@/components/ui";
 import { requireActor } from "@/lib/session";
-import { formatDateVi, formatInstant, todayOps } from "@/lib/time";
+import { formatDateVi, formatInstant, todayOps, weekdayVi } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
 import { CHANNEL_LABELS, STAY_STATUS_LABELS } from "@/modules/booking/types";
 import { READINESS_LABELS, type ReadinessStatus } from "@/modules/cleaning/readiness";
@@ -21,8 +21,29 @@ export default async function TodayPage() {
   const data = await todayOverview(actor, date);
   const showGuest = can(actor, "booking.view_guest_contact");
 
+  // "Dịu — Vietnam team" → "Dịu" (tên gọi tiếng Việt là từ cuối)
+  const firstName = (actor.fullName.split(/\s+[—-]\s+/)[0] ?? actor.fullName).trim().split(/\s+/).pop();
+  const alerts = data.pending.conflicts + data.tasks.overdue + data.notReady.length;
+
   return (
     <div className="stack">
+      {/* Điện thoại: lời chào + tóm tắt ngày + lối tắt */}
+      <section className="show-mobile hero">
+        <div className="hero-date">
+          {weekdayVi(date)} · {formatDateVi(date)} · Budapest
+        </div>
+        <div className="hero-hello">Chào {firstName}</div>
+        <div className="hero-summary">
+          {data.counts.arrivalBookings} khách đến · {data.counts.departureBookings} khách đi · {data.counts.stayoverBookings} ở tiếp
+        </div>
+        <div className={`hero-status ${alerts ? "warn" : "ok"}`}>{alerts ? `${alerts} việc cần chú ý hôm nay` : "Mọi thứ đang ổn"}</div>
+        <div className="hero-links">
+          {can(actor, "calendar.view") ? <Link href="/lich">Lịch phòng</Link> : null}
+          {can(actor, "cleaning.view_all") ? <Link href="/cleaning">Dọn phòng</Link> : null}
+          {can(actor, "booking.view") ? <Link href="/duyet">Duyệt{data.pending.change_requests + data.pending.conflicts ? ` (${data.pending.change_requests + data.pending.conflicts})` : ""}</Link> : null}
+        </div>
+      </section>
+      <div className="hide-mobile">
       <PageHeader
         title="Tổng quan hôm nay"
         description={`Ngày vận hành ${formatDateVi(date)} theo giờ Budapest. Số booking và số phòng được đếm riêng; giờ nhận dự kiến không chứng minh khách đã đến.`}
@@ -32,6 +53,7 @@ export default async function TodayPage() {
           </Link>
         }
       />
+      </div>
 
       {data.pending.conflicts ? (
         <Notice tone="danger" title={`${data.pending.conflicts} xung đột lịch đang mở`}>

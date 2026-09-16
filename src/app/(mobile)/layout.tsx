@@ -11,8 +11,15 @@ export default async function MobileLayout({ children }: { children: React.React
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <Link href="/m">Việc của tôi</Link>
-        <span className={styles.who}>{actor.fullName}</span>
+        <Link href="/m" className={styles.brand} aria-label="Việc của tôi">
+          <img src="/icon.png" alt="" width={28} height={28} />
+        </Link>
+        <div className={styles.titleBox}>
+          <Link href="/m" className={styles.title}>
+            Việc của tôi
+          </Link>
+          <span className={styles.who}>{actor.fullName}</span>
+        </div>
         <MobileLogout />
       </header>
       <MobileOfflineBanner />
