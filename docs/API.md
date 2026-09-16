@@ -1,4 +1,4 @@
-# API `/api/v1` — NIBELC Platform
+# API `/api/v1` — Nibelc Hotel King
 
 Tài liệu dành cho người viết code (agent QA/UI, tích hợp sau này). Nguồn sự thật là code trong `src/app/api/v1/**/route.ts` — tài liệu này liệt kê lại, không thay thế code.
 

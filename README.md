@@ -1,4 +1,4 @@
-# NIBELC Platform
+# Nibelc Hotel King
 
 Webapp vận hành các căn hộ cho thuê tại Budapest: booking, lịch phòng, danh mục nhà/phòng, điều phối dọn phòng (cleaning), nhập dữ liệu từ Excel/Word, kết nối kênh bán (đang ở mức DEMO). Đích cuối là nền tảng dùng chung cho ba trợ lý AI (Booking, Cleaning, Guest Support) và Agent Manager mô tả trong đặc tả gốc — bản hiện tại là phần lõi nghiệp vụ + giao diện vận hành cho người, **chưa có trợ lý AI nào chạy**.
 

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "NIBELC Platform", template: "%s · NIBELC" },
+  title: { default: "Nibelc Hotel King", template: "%s · Nibelc Hotel King" },
   description: "Vận hành căn hộ cho thuê — booking, lịch phòng, cleaning",
   manifest: "/manifest.webmanifest",
 };

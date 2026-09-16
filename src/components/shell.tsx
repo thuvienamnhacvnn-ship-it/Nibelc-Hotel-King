@@ -48,7 +48,7 @@ export function Shell({ nav, topbar, children }: { nav: ShellNavGroup[]; topbar:
           <span aria-hidden style={{ background: "#fff", color: "var(--navy-900)", borderRadius: 6, padding: "2px 6px" }}>
             N
           </span>
-          NIBELC Platform
+          Nibelc Hotel King
         </div>
         {nav.map((g) => (
           <div key={g.group}>
