@@ -2,6 +2,10 @@
 
 import {
   BookOpen,
+  Bot,
+  FileBarChart,
+  LibraryBig,
+  MessagesSquare,
   Building2,
   CalendarDays,
   FileSpreadsheet,
@@ -21,6 +25,10 @@ import { OfflineBanner, callApi } from "./client";
 
 const ICONS: Record<string, typeof BookOpen> = {
   BookOpen,
+  Bot,
+  FileBarChart,
+  LibraryBig,
+  MessagesSquare,
   Building2,
   CalendarDays,
   FileSpreadsheet,

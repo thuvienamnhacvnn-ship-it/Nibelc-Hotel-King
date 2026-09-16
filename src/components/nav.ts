@@ -3,7 +3,7 @@ import type { Permission } from "@/modules/auth/permissions";
 
 /**
  * Menu theo quyền. CHỈ liệt kê màn hình đã chạy thật — không đặt mục cho tính năng chưa làm
- * (Inbox, Q&A, Agent Center, Báo cáo thuộc Đợt 2–3, xem docs/TRUY-VET-YEU-CAU.md).
+ * Mục Đợt 2 chỉ thêm khi màn hình đã chạy thật (hộp thư, Q&A, báo cáo, Agent Center).
  */
 export interface NavItem {
   href: string;
@@ -20,6 +20,8 @@ export const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/bookings", label: "Booking", icon: "BookOpen", any: ["booking.view"] },
       { href: "/lich", label: "Lịch phòng", icon: "CalendarDays", any: ["calendar.view"] },
       { href: "/duyet", label: "Chờ duyệt & xung đột", icon: "ShieldCheck", any: ["booking.request_change", "conflict.resolve", "booking.view"] },
+      { href: "/hop-thu", label: "Hộp thư & tổng đài", icon: "MessagesSquare", any: ["inbox.view"] },
+      { href: "/kho-qa", label: "Kho Q&A", icon: "LibraryBig", any: ["qa.view"] },
     ],
   },
   {
@@ -36,6 +38,13 @@ export const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/nhap-excel", label: "Nhập Excel", icon: "FileSpreadsheet", any: ["import.preview"] },
       { href: "/ket-noi", label: "Kết nối kênh", icon: "PlugZap", any: ["connector.view"] },
       { href: "/nhat-ky", label: "Nhật ký", icon: "History", any: ["audit.view"] },
+    ],
+  },
+  {
+    group: "Quản lý",
+    items: [
+      { href: "/bao-cao", label: "Báo cáo ngày", icon: "FileBarChart", any: ["reports.view"] },
+      { href: "/agent-center", label: "Agent Center", icon: "Bot", any: ["automation.pause", "reports.view"] },
     ],
   },
 ];

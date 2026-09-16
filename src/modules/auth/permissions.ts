@@ -44,6 +44,15 @@ export const PERMISSIONS = [
   "audit.view",
   "reports.view",
   "users.manage",
+  // Đợt 2
+  "inbox.view",
+  "inbox.reply",
+  "inbox.takeover",
+  "tickets.manage",
+  "qa.view",
+  "qa.edit",
+  "qa.approve",
+  "templates.approve",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -54,6 +63,14 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   // Leader: xem và duyệt mọi nghiệp vụ; quản trị tài khoản/kỹ thuật vẫn thuộc admin.
   leader: new Set<Permission>(PERMISSIONS.filter((p) => p !== "users.manage" && p !== "connector.manage")),
   vn_manager: new Set<Permission>([
+    "inbox.view",
+    "inbox.reply",
+    "inbox.takeover",
+    "tickets.manage",
+    "qa.view",
+    "qa.edit",
+    "qa.approve",
+    "templates.approve",
     "booking.view",
     "booking.view_guest_contact",
     "booking.create",
@@ -76,6 +93,12 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "reports.view",
   ]),
   vn_staff: new Set<Permission>([
+    "inbox.view",
+    "inbox.reply",
+    "inbox.takeover",
+    "tickets.manage",
+    "qa.view",
+    "qa.edit",
     "booking.view",
     "booking.view_guest_contact",
     "booking.create",
@@ -89,6 +112,13 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "connector.view",
   ]),
   bp_coordinator: new Set<Permission>([
+    "inbox.view",
+    "inbox.reply",
+    "inbox.takeover",
+    "tickets.manage",
+    "qa.view",
+    "qa.edit",
+    "qa.approve",
     "booking.view",
     "booking.view_guest_contact",
     "booking.request_change",
@@ -103,6 +133,9 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "reports.view",
   ]),
   bp_staff: new Set<Permission>([
+    "inbox.view",
+    "tickets.manage",
+    "qa.view",
     "booking.view",
     "booking.stay_status",
     "catalog.view",
@@ -113,6 +146,8 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   // Cleaner chỉ thấy việc được giao và thông tin cần cho việc đó.
   cleaner: new Set<Permission>(["cleaning.own"]),
   manager_viewer: new Set<Permission>([
+    "inbox.view",
+    "qa.view",
     "booking.view",
     "revenue.view",
     "catalog.view",
