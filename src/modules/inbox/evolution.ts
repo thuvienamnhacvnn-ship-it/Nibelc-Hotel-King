@@ -143,17 +143,54 @@ export interface WebhookResult {
   body: Record<string, unknown>;
 }
 
-export async function handleEvolutionWebhook(connectorId: string, token: string | null, rawBody: string, deps?: Partial<InboxDeps>): Promise<WebhookResult> {
-  const unauthorized: WebhookResult = { status: 401, body: { error: { code: "unauthorized", message: "Token webhook không hợp lệ." } } };
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connectorId)) return unauthorized;
+export interface WebhookConnector {
+  id: string;
+  org_id: string;
+  is_demo: boolean;
+}
+
+const UNAUTHORIZED: WebhookResult = { status: 401, body: { error: { code: "unauthorized", message: "Token webhook không hợp lệ." } } };
+const TOO_LARGE: WebhookResult = { status: 413, body: { error: { code: "payload_too_large", message: "Payload quá lớn." } } };
+
+/** Bước 1 — chỉ cần header: xác thực TRƯỚC khi đọc body. Không phân biệt "không có connector" với "sai token". */
+export async function authenticateEvolutionWebhook(connectorId: string, token: string | null): Promise<WebhookConnector | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connectorId)) return null;
+  if (!token) return null;
   const connector = await queryOne<{ id: string; org_id: string; channel: string; webhook_secret_hash: string | null; is_demo: boolean }>(
     `SELECT ca.id, ca.org_id, ca.channel, ca.webhook_secret_hash, o.is_demo
        FROM connector_accounts ca JOIN organizations o ON o.id = ca.org_id WHERE ca.id = $1`,
     [connectorId],
   );
-  // Không phân biệt "không có connector" với "sai token" — tránh dò mã connector.
-  if (!connector || connector.channel !== "whatsapp" || !tokenMatches(token, connector.webhook_secret_hash)) return unauthorized;
-  if (Buffer.byteLength(rawBody, "utf8") > WEBHOOK_MAX_BYTES) return { status: 413, body: { error: { code: "payload_too_large", message: "Payload quá lớn." } } };
+  if (!connector || connector.channel !== "whatsapp" || !tokenMatches(token, connector.webhook_secret_hash)) return null;
+  return { id: connector.id, org_id: connector.org_id, is_demo: connector.is_demo };
+}
+
+/** Bước 2 — đọc body theo luồng, dừng ngay khi vượt WEBHOOK_MAX_BYTES (không tin content-length, kể cả chunked). */
+export async function readLimitedBody(stream: ReadableStream<Uint8Array> | null, max = WEBHOOK_MAX_BYTES): Promise<{ ok: true; text: string } | { ok: false }> {
+  if (!stream) return { ok: true, text: "" };
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { ok: true, text: new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks)) };
+}
+
+/** Bước 3 — xử lý payload của connector đã xác thực. */
+export async function processEvolutionPayload(connector: WebhookConnector, rawBody: string, deps?: Partial<InboxDeps>): Promise<WebhookResult> {
+  if (Buffer.byteLength(rawBody, "utf8") > WEBHOOK_MAX_BYTES) return TOO_LARGE;
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
@@ -172,4 +209,23 @@ export async function handleEvolutionWebhook(connectorId: string, token: string 
   }
   for (const s of parsed.statuses) statusUpdates += await applyDeliveryStatus(connector.org_id, connector.id, s);
   return { status: 200, body: { ok: true, event: parsed.event || null, stored, duplicates, statusUpdates, ignored: parsed.ignored } };
+}
+
+/** Gộp 3 bước (dùng trong kiểm thử và route). */
+export async function handleEvolutionWebhook(
+  connectorId: string,
+  token: string | null,
+  body: string | ReadableStream<Uint8Array> | null,
+  deps?: Partial<InboxDeps>,
+): Promise<WebhookResult> {
+  const connector = await authenticateEvolutionWebhook(connectorId, token);
+  if (!connector) return UNAUTHORIZED;
+  let raw: string;
+  if (typeof body === "string") raw = body;
+  else {
+    const read = await readLimitedBody(body);
+    if (!read.ok) return TOO_LARGE;
+    raw = read.text;
+  }
+  return processEvolutionPayload(connector, raw, deps);
 }

@@ -186,12 +186,25 @@ describe("bot nháp + handoff", () => {
     expect(s.findAnswer).not.toHaveBeenCalled();
     expect(await query("SELECT id FROM messages WHERE conversation_id = $1 AND direction = 'out'", [first.conversationId])).toHaveLength(0);
 
+    // Tiếp quản đóng handoff đang mở: accepted bởi người tiếp quản (dừng đẩy cấp)
     const h = await queryOne<{ id: string }>("SELECT id FROM handoffs WHERE conversation_id = $1", [first.conversationId]);
-    await acceptHandoff(fixture.actors.bp_coordinator, h!.id);
     const after = await queryOne<{ status: string; accepted_by: string }>("SELECT status, accepted_by FROM handoffs WHERE id = $1", [h!.id]);
     expect(after).toMatchObject({ status: "accepted", accepted_by: fixture.actors.bp_coordinator.userId });
     await expectCode(acceptHandoff(fixture.actors.vn_staff, h!.id), "handoff_not_open");
     await expectCode(takeOverConversation(fixture.actors.bp_staff, first.conversationId), "forbidden");
+  });
+
+  it("acceptHandoff khi chưa ai tiếp quản ⇒ accepted + hội thoại chuyển người", async () => {
+    const { connectorId } = await whatsappConnector(fixture);
+    const s = stubDeps(null);
+    const res = await ingestInboundMessage(
+      { orgId: fixture.orgId, connectorId, channel: "whatsapp", threadId: jid(), externalMessageId: `M-${uid()}`, senderHandle: null, senderName: "G", text: "Is there a gym?", occurredAt: null },
+      s.deps,
+    );
+    const h = await queryOne<{ id: string }>("SELECT id FROM handoffs WHERE conversation_id = $1", [res.conversationId]);
+    await acceptHandoff(fixture.actors.bp_coordinator, h!.id);
+    const conv = await queryOne<{ handled_by: string; takeover_by: string }>("SELECT handled_by, takeover_by FROM conversations WHERE id = $1", [res.conversationId]);
+    expect(conv).toMatchObject({ handled_by: "human", takeover_by: fixture.actors.bp_coordinator.userId });
   });
 
   it("số điện thoại trùng nhân viên ⇒ hội thoại staff, nhóm @g.us ⇒ group; bot không chạy", async () => {

@@ -32,7 +32,7 @@ import {
   workerStatus,
 } from "@/modules/manager/queries";
 import { canRetryOutbox } from "@/modules/manager/service";
-import { RATE_LIMIT_PER_ORG_HOUR, SUPPRESSED_REASON_LABELS } from "@/modules/notifications/sender";
+import { SUPPRESSED_REASON_LABELS } from "@/modules/notifications/sender";
 import { sendFailureLabel } from "@/modules/inbox/transport";
 import { orgInfo } from "@/modules/system/queries";
 import {
@@ -194,8 +194,7 @@ async function OverviewTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
             ]}
           />
           <div className="small muted" style={{ marginTop: 8 }}>
-            GPU/model chưa kết nối — các con số trên là tổng từ bảng lượt chạy, hiện chưa có lượt nào dùng AI. Hạn mức gửi WhatsApp nội bộ: {RATE_LIMIT_PER_ORG_HOUR} tin/giờ, 1 tin/phút/người, chỉ tới số đã
-            từng nhắn vào tổng đài.
+            GPU/model chưa kết nối — các con số trên là tổng từ bảng lượt chạy, hiện chưa có lượt nào dùng AI. Gửi WhatsApp nội bộ: tối đa 1 tin/phút/người (cảnh báo P0/P1 được vượt), giãn cách và trần theo giờ của số tổng đài dùng chung với hộp thư; vượt mức thì tin chờ lượt sau, không bị bỏ. Chỉ gửi tới số đã từng nhắn vào đúng số tổng đài đó.
           </div>
         </Card>
       </div>

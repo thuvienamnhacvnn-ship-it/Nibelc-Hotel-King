@@ -23,6 +23,7 @@ import {
   phoneDigits,
 } from "./rules";
 import { TICKET_TRANSITIONS } from "./labels";
+import { SEND_LIMITS } from "./limits";
 import { type SendResult, sendWhatsAppText } from "./transport";
 
 /**
@@ -257,6 +258,7 @@ const HANDOFF_REASON_LABELS: Record<string, string> = {
   needs_verification: "Cần khớp booking trước khi trả lời",
   access_like_answer: "Câu trả lời có dáng chứa mã truy cập",
   manual: "Nhân viên yêu cầu chuyển người",
+  bot_conversation_limit: "Khách hỏi nhiều, cần người trả lời",
 };
 
 export function handoffReasonLabel(reason: string) {
@@ -320,10 +322,28 @@ export async function runGuestBot(orgId: string, conversationId: string, inbound
     const a = answer!;
     const paused = await isPaused(orgId, [{ scope: "agent", key: "guest" }, { scope: "channel", key: "whatsapp_guest" }], { client: tx });
     const autoSend = !paused.paused;
+    if (autoSend && (await botConversationLimitHit(tx, orgId, conversationId, null))) {
+      // Khách hỏi dồn dập: bot không tự gửi thêm, chuyển người.
+      const res = await createHandoffTx(tx, {
+        conv: locked,
+        reason: "bot_conversation_limit",
+        category: "question",
+        priority: "P2",
+        summary: HANDOFF_REASON_LABELS.bot_conversation_limit,
+        stepsTried: ["Bot đã chạm trần tin tự gửi trong hội thoại"],
+        audit: BOT_AUDIT(orgId),
+        createdByType: "bot",
+        createdBy: null,
+        targetUserId: null,
+        sourceMessageId: inboundMessageId,
+      });
+      return { action: "handoff", handoffId: res.handoffId, ticketId: res.ticketId, reason: "bot_conversation_limit", created: res.created };
+    }
     const grounding = { entryId: a.entryId, entryKey: a.entryKey, version: a.version, scope: a.scope, topic: a.topic, language: a.language, sensitivity: a.sensitivity, score: a.score, inReplyTo: inboundMessageId };
+    // queued_at = lúc vào hàng đợi (tính hạn gửi).
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, grounding)
-       VALUES ($1,$2,'out','bot','Bot Q&A',$3,$4,$5) RETURNING id`,
+      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, grounding, queued_at)
+       VALUES ($1,$2,'out','bot','Bot Q&A',$3,$4,$5, CASE WHEN $4::text = 'queued' THEN now() END) RETURNING id`,
       [orgId, conversationId, a.answer, autoSend ? "queued" : "draft", JSON.stringify(grounding)],
     );
     await writeAudit(tx, BOT_AUDIT(orgId), autoSend ? "inbox.bot_queued" : "inbox.bot_draft", "message", rows[0].id, { conversationId, entryId: a.entryId, version: a.version });
@@ -332,6 +352,47 @@ export async function runGuestBot(orgId: string, conversationId: string, inbound
 
   // Tin bot 'queued' do worker gửi (jobs.ts) — webhook trả lời ngay.
   return outcome;
+}
+
+/**
+ * Trần tin bot TỰ GỬI (approved_by NULL) trong một hội thoại: ≤ botPerConversationHour/60 phút và cách nhau ≥ botConversationGapMs.
+ * Tính cả tin đang xếp hàng/đang gửi (trừ chính tin đang xét). Nháp người duyệt không tính.
+ */
+export async function botConversationLimitHit(q: Queryable, orgId: string, conversationId: string, excludeMessageId: string | null): Promise<boolean> {
+  const { rows } = await q.query<{ hour: number; recent: number }>(
+    `SELECT count(*) FILTER (WHERE sent_at > now() - interval '60 minutes' OR status IN ('queued','sending'))::int AS hour,
+            count(*) FILTER (WHERE sent_at > now() - make_interval(secs => $4) OR status IN ('queued','sending'))::int AS recent
+       FROM messages
+      WHERE conversation_id = $1 AND org_id = $2 AND direction = 'out' AND author_type = 'bot' AND approved_by IS NULL
+        AND ($3::uuid IS NULL OR id <> $3::uuid)`,
+    [conversationId, orgId, excludeMessageId, SEND_LIMITS.botConversationGapMs / 1000],
+  );
+  return (rows[0]?.hour ?? 0) >= SEND_LIMITS.botPerConversationHour || (rows[0]?.recent ?? 0) > 0;
+}
+
+/** Worker: tin bot đang 'sending' vượt trần hội thoại ⇒ huỷ tin + chuyển người "khách hỏi nhiều". */
+export async function discardBotMessageForLimit(orgId: string, conversationId: string, messageId: string) {
+  return withTx(async (tx) => {
+    const conv = await lockConversation(tx, orgId, conversationId);
+    const upd = await tx.query("UPDATE messages SET status = 'discarded', error = 'bot_conversation_limit' WHERE id = $1 AND org_id = $2 AND status = 'sending' RETURNING id", [
+      messageId,
+      orgId,
+    ]);
+    if (!upd.rows[0]) return null;
+    return createHandoffTx(tx, {
+      conv,
+      reason: "bot_conversation_limit",
+      category: "question",
+      priority: "P2",
+      summary: HANDOFF_REASON_LABELS.bot_conversation_limit,
+      stepsTried: ["Bot đã chạm trần tin tự gửi trong hội thoại — tin chờ gửi đã huỷ"],
+      audit: BOT_AUDIT(orgId),
+      createdByType: "bot",
+      createdBy: null,
+      targetUserId: null,
+      sourceMessageId: messageId,
+    });
+  });
 }
 
 // ───────────────────────── Handoff & người nhận ─────────────────────────
@@ -523,8 +584,26 @@ export async function takeOverConversation(actor: Actor, conversationId: string)
       "UPDATE conversations SET handled_by = 'human', takeover_by = $2, takeover_at = now(), assignee_user_id = $2, updated_at = now() WHERE id = $1",
       [conv.id, actor.userId],
     );
-    await writeAudit(tx, auditActorOf(actor), "inbox.takeover", "conversation", conv.id, { previous: conv.handled_by, previousTakeoverBy: conv.takeover_by });
-    return { ok: true, handledBy: "human" };
+    // Bot im lặng: mọi tin bot chưa gửi (nháp, chờ duyệt, xếp hàng) bị huỷ. Tin đang 'sending' do worker kiểm lại trước khi gọi kênh.
+    const discarded = await tx.query<{ id: string }>(
+      `UPDATE messages SET status = 'discarded', error = 'taken_over'
+        WHERE conversation_id = $1 AND org_id = $2 AND direction = 'out' AND author_type = 'bot' AND status IN ('draft','pending_approval','queued')
+        RETURNING id`,
+      [conv.id, actor.orgId],
+    );
+    // Người đã cầm hội thoại ⇒ yêu cầu chuyển người đang chờ coi như đã có người nhận (dừng đẩy cấp).
+    const accepted = await tx.query<{ id: string }>(
+      `UPDATE handoffs SET status = 'accepted', accepted_by = $3, accepted_at = now()
+        WHERE conversation_id = $1 AND org_id = $2 AND status IN ('requested','escalated') RETURNING id`,
+      [conv.id, actor.orgId, actor.userId],
+    );
+    await writeAudit(tx, auditActorOf(actor), "inbox.takeover", "conversation", conv.id, {
+      previous: conv.handled_by,
+      previousTakeoverBy: conv.takeover_by,
+      discardedBotMessages: discarded.rows.map((r) => r.id),
+      acceptedHandoffs: accepted.rows.map((r) => r.id),
+    });
+    return { ok: true, handledBy: "human", discardedBotMessages: discarded.rows.length, acceptedHandoffs: accepted.rows.length };
   });
 }
 
@@ -568,8 +647,8 @@ export async function replyToConversation(actor: Actor, conversationId: string, 
   return withTx(async (tx) => {
     const conv = await lockConversation(tx, actor.orgId, conversationId);
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_user_id, author_name, body, status, approved_by)
-       VALUES ($1,$2,'out','staff',$3,$4,$5,'queued',$3) RETURNING id`,
+      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_user_id, author_name, body, status, approved_by, queued_at)
+       VALUES ($1,$2,'out','staff',$3,$4,$5,'queued',$3,now()) RETURNING id`,
       [actor.orgId, conv.id, actor.userId, actor.fullName, input.body],
     );
     await tx.query("UPDATE conversations SET last_message_at = now(), unread_count = 0, updated_at = now() WHERE id = $1", [conv.id]);
@@ -589,7 +668,7 @@ export async function approveDraft(actor: Actor, messageId: string, raw: unknown
     const msg = await lockDraft(tx, actor.orgId, messageId);
     const edited = input.body != null && input.body !== msg.body;
     const grounding = msg.grounding ? { ...msg.grounding, editedByStaff: edited || undefined } : null;
-    await tx.query("UPDATE messages SET status = 'queued', body = $2, approved_by = $3, grounding = $4, error = NULL WHERE id = $1", [
+    await tx.query("UPDATE messages SET status = 'queued', body = $2, approved_by = $3, grounding = $4, error = NULL, queued_at = now(), locked_at = NULL, available_at = NULL WHERE id = $1", [
       messageId,
       edited ? input.body : msg.body,
       actor.userId,
@@ -637,7 +716,7 @@ export async function retryMessage(actor: Actor, messageId: string): Promise<Que
     );
     if (!rows[0]) throw notFound("tin");
     if (rows[0].status !== "failed") throw conflict("not_failed", "Chỉ gửi lại được tin đang ở trạng thái thất bại.");
-    await tx.query("UPDATE messages SET status = 'queued', error = NULL, locked_at = NULL WHERE id = $1", [messageId]);
+    await tx.query("UPDATE messages SET status = 'queued', error = NULL, queued_at = now(), locked_at = NULL, available_at = NULL WHERE id = $1", [messageId]);
     await writeAudit(tx, auditActorOf(actor), "inbox.retry", "message", messageId, { conversationId: rows[0].conversation_id, previousError: rows[0].error });
   });
   return { messageId, status: "queued" };

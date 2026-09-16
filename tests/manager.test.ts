@@ -9,7 +9,7 @@ import { listStaffNotifications } from "@/modules/manager/queries";
 import { buildDailyReport, computeDailyReport } from "@/modules/manager/report";
 import { approveTemplate, saveTemplateDraft, setAutomationSwitch } from "@/modules/manager/service";
 import { enqueueStaffNotification } from "@/modules/notifications/enqueue";
-import { type WhatsAppTransport, sendQueuedNotifications } from "@/modules/notifications/sender";
+import { type WhatsAppTransport, processOneNotification, sendQueuedNotifications } from "@/modules/notifications/sender";
 import { type Fixture, bookingInput, expectCode, makeFixture, runWorker, uid } from "./helpers";
 
 const D = "2026-11-10";
@@ -158,26 +158,6 @@ describe("Bộ gửi thông báo cho đội", () => {
     expect((await notif(thrown.id!)).status).toBe("failed");
   });
 
-  it("chưa tới lượt gửi của số tổng đài ⇒ trả về hàng đợi; tin kẹt 'sending' quá 2 phút ⇒ failed, không gửi lại", async () => {
-    const f = await makeFixture();
-    const user = f.actors.bp_coordinator.userId!;
-    await allowSending(f, user);
-    const q = await enqueue(f, user);
-    const t = fakeTransport({ ok: false, reason: "rate_limited" });
-    const stats = await sendQueuedNotifications({ transport: t.fn, orgId: f.orgId });
-    expect(stats.deferred).toBe(1);
-    const row = await queryOne<{ status: string; locked_at: Date | null }>("SELECT status, locked_at FROM staff_notifications WHERE id = $1", [q.id]);
-    expect(row).toMatchObject({ status: "queued", locked_at: null });
-
-    const stuck = await enqueue(f, f.actors.admin.userId!);
-    await query("UPDATE staff_notifications SET status = 'sending', locked_at = now() - interval '3 minutes' WHERE id = $1", [stuck.id]);
-    const ok = fakeTransport();
-    await sendQueuedNotifications({ transport: ok.fn, orgId: f.orgId });
-    expect((await notif(stuck.id!)).status).toBe("failed");
-    expect(ok.calls.every((c) => c.text.length > 0)).toBe(true);
-    expect((await query("SELECT id FROM staff_notifications WHERE id = $1 AND status = 'sent'", [stuck.id])).length).toBe(0);
-  });
-
   it("kênh trong app ⇒ chỉ đánh dấu sent, không gọi transport", async () => {
     const f = await makeFixture();
     const q = await enqueue(f, f.actors.admin.userId!, `a:${uid()}`, "inapp");
@@ -187,31 +167,6 @@ describe("Bộ gửi thông báo cho đội", () => {
     expect(t.calls).toHaveLength(0);
   });
 
-  it("hạn mức: 1 tin/phút/người và 20 tin/giờ/tổ chức", async () => {
-    const f = await makeFixture();
-    const user = f.actors.bp_coordinator.userId!;
-    await allowSending(f, user);
-    const a = await enqueue(f, user);
-    const b = await enqueue(f, user);
-    const t = fakeTransport();
-    await sendQueuedNotifications({ transport: t.fn, orgId: f.orgId });
-    const statuses = [await notif(a.id!), await notif(b.id!)];
-    expect(statuses.filter((s) => s.status === "sent")).toHaveLength(1);
-    expect(statuses.find((s) => s.status === "suppressed")?.suppressed_reason).toBe("rate_limit_recipient");
-
-    const g = await makeFixture();
-    const u = g.actors.bp_coordinator.userId!;
-    await allowSending(g, u);
-    for (let i = 0; i < 20; i++) {
-      await query(
-        "INSERT INTO staff_notifications (org_id, recipient_user_id, template_key, dedupe_key, status, sent_at) VALUES ($1,$2,'ticket_escalation',$3,'sent', now() - interval '10 minutes')",
-        [g.orgId, g.actors.admin.userId, `old:${i}`],
-      );
-    }
-    const c = await enqueue(g, u);
-    await sendQueuedNotifications({ transport: fakeTransport().fn, orgId: g.orgId });
-    expect(await notif(c.id!)).toMatchObject({ status: "suppressed", suppressed_reason: "rate_limit_org" });
-  });
 });
 
 describe("Đẩy lên cấp trên", () => {
@@ -366,5 +321,124 @@ describe("Báo cáo theo lịch", () => {
     // Ngoài cửa sổ giờ gửi: không làm gì
     await runScheduledReportsJob(new Date("2026-11-11T12:00:00Z"));
     expect(await count("SELECT id FROM staff_notifications WHERE org_id = $1")).toBe(1);
+  });
+});
+
+describe("Vòng sửa QA2 — bộ gửi và đẩy cấp", () => {
+  it("tin vào connector DEMO hoặc hội thoại gắn nhân viên từ số khác KHÔNG mở khoá gửi qua connector thử nghiệm", async () => {
+    const f = await makeFixture();
+    const user = f.actors.bp_coordinator.userId!;
+    const { phone } = await allowSending(f, user, { inbound: false });
+    const demo = await queryOne<{ id: string }>("INSERT INTO connector_accounts (org_id, channel, label, status) VALUES ($1,'whatsapp',$2,'demo') RETURNING id", [f.orgId, `WA demo ${uid()}`]);
+    await query("INSERT INTO conversations (org_id, channel, connector_id, external_thread_id, kind, last_inbound_at, is_demo) VALUES ($1,'whatsapp',$2,$3,'staff',now(),true)", [
+      f.orgId,
+      demo!.id,
+      `${phone}@s.whatsapp.net`,
+    ]);
+    const testing = await queryOne<{ id: string }>("SELECT id FROM connector_accounts WHERE org_id = $1 AND status = 'testing'", [f.orgId]);
+    // Hội thoại trên đúng connector, gắn đúng nhân viên, nhưng từ số cũ khác số hiện tại
+    await query("INSERT INTO conversations (org_id, channel, connector_id, external_thread_id, kind, staff_user_id, last_inbound_at) VALUES ($1,'whatsapp',$2,'36709999999@s.whatsapp.net','staff',$3,now())", [
+      f.orgId,
+      testing!.id,
+      user,
+    ]);
+    const q = await enqueue(f, user);
+    const t = fakeTransport();
+    await sendQueuedNotifications({ transport: t.fn, orgId: f.orgId });
+    expect(await notif(q.id!)).toMatchObject({ status: "suppressed", suppressed_reason: "recipient_never_messaged" });
+    expect(t.calls).toHaveLength(0);
+  });
+
+  it("hai tiến trình: tin đã bị tiến trình khác đổi thì không gọi transport; tin kẹt quá 2 phút ⇒ failed, không gửi lại", async () => {
+    const f = await makeFixture();
+    const user = f.actors.bp_coordinator.userId!;
+    await allowSending(f, user);
+    const q = await enqueue(f, user);
+    // Tiến trình A giành tin
+    const claimed = await queryOne<{ lock: string }>("UPDATE staff_notifications SET status = 'sending', locked_at = now() WHERE id = $1 RETURNING locked_at::text AS lock", [q.id]);
+    // Tiến trình B coi là kẹt và đánh failed trước khi A kịp gửi
+    await query("UPDATE staff_notifications SET status = 'failed', error = 'kẹt', locked_at = NULL WHERE id = $1", [q.id]);
+    const t = fakeTransport();
+    const row = await queryOne<{ id: string; org_id: string; recipient_user_id: string; channel: "whatsapp"; template_key: string; payload: Record<string, unknown> }>(
+      "SELECT id, org_id, recipient_user_id, channel, template_key, payload FROM staff_notifications WHERE id = $1",
+      [q.id],
+    );
+    expect(await processOneNotification({ ...row!, lock: claimed!.lock }, t.fn)).toBe("lost");
+    expect(t.calls).toHaveLength(0);
+
+    const stuck = await enqueue(f, f.actors.admin.userId!);
+    await query("UPDATE staff_notifications SET status = 'sending', locked_at = now() - interval '3 minutes' WHERE id = $1", [stuck.id]);
+    const ok = fakeTransport();
+    const stats = await sendQueuedNotifications({ transport: ok.fn, orgId: f.orgId });
+    expect(stats.stuck).toBe(1);
+    expect((await notif(stuck.id!)).status).toBe("failed");
+    expect(ok.calls).toHaveLength(0);
+  });
+
+  it("vượt 1 tin/phút/người ⇒ chờ lượt sau (queued), P0/P1 được vượt; số tổng đài báo rate_limited ⇒ queued, không mất tin", async () => {
+    const f = await makeFixture();
+    const user = f.actors.bp_coordinator.userId!;
+    await allowSending(f, user);
+    const a = await enqueue(f, user);
+    const b = await enqueue(f, user);
+    const urgent = await enqueue(f, user, `u:${uid()}`, "whatsapp", { summary: "Khách kẹt ngoài cửa", priority: "P1" });
+    const t = fakeTransport();
+    const stats = await sendQueuedNotifications({ transport: t.fn, orgId: f.orgId });
+    expect(stats).toMatchObject({ sent: 2, deferred: 1, suppressed: 0 });
+    const rows = await query<{ id: string; status: string; locked_at: Date | null; available_at: Date; connector_id: string | null }>("SELECT id, status, locked_at, available_at, connector_id FROM staff_notifications WHERE id = ANY($1::uuid[])", [[a.id, b.id, urgent.id]]);
+    expect(rows.find((r) => r.id === urgent.id)!.status).toBe("sent");
+    const waiting = rows.find((r) => r.status === "queued")!;
+    expect(waiting.locked_at).toBeNull();
+    expect(new Date(waiting.available_at).getTime()).toBeGreaterThan(Date.now() + 30_000);
+    expect(rows.find((r) => r.id === urgent.id)!.connector_id).not.toBeNull();
+    // Chạy lại ngay: tin đang chờ chưa tới lượt, không bị lấy
+    expect((await sendQueuedNotifications({ transport: t.fn, orgId: f.orgId })).sent).toBe(0);
+
+    const g = await makeFixture();
+    const u = g.actors.bp_coordinator.userId!;
+    await allowSending(g, u);
+    const c = await enqueue(g, u);
+    const s2 = await sendQueuedNotifications({ transport: fakeTransport({ ok: false, reason: "rate_limited" }).fn, orgId: g.orgId });
+    expect(s2.deferred).toBe(1);
+    expect((await notif(c.id!)).status).toBe("queued");
+
+    // Chạm trần theo giờ ⇒ vẫn queued, hẹn theo nextHourSlotAt của transport (không trước hiện tại)
+    await query("UPDATE staff_notifications SET available_at = now() WHERE id = $1", [c.id]);
+    const s3 = await sendQueuedNotifications({ transport: fakeTransport({ ok: false, reason: "rate_limited_hour" }).fn, orgId: g.orgId });
+    expect(s3.deferred).toBe(1);
+    const hour = await queryOne<{ status: string; ok: boolean }>("SELECT status, available_at >= now() - interval '1 second' AS ok FROM staff_notifications WHERE id = $1", [c.id]);
+    expect(hour).toEqual({ status: "queued", ok: true });
+  });
+
+  it("handoff đẩy theo mục đích của ticket (bảo trì), mục đích trống thì về hỗ trợ khách; handoff đã nhận không đẩy", async () => {
+    const f = await makeFixture();
+    await query(
+      "INSERT INTO escalation_contacts (org_id, purpose, level, user_id) VALUES ($1,'maintenance',0,$2), ($1,'maintenance',1,$3), ($1,'guest_support',0,$4), ($1,'guest_support',1,$5)",
+      [f.orgId, f.actors.bp_coordinator.userId, f.actors.bp_staff.userId, f.actors.vn_staff.userId, f.actors.vn_manager.userId],
+    );
+    const t0 = new Date("2026-11-10T10:00:00Z");
+    const due = new Date(t0.getTime() - 60_000);
+    const mk = async (category: string, status = "requested") => {
+      const conv = await queryOne<{ id: string }>("INSERT INTO conversations (org_id, channel, external_thread_id) VALUES ($1,'webapp',$2) RETURNING id", [f.orgId, `th-${uid()}`]);
+      const ticket = await queryOne<{ id: string }>("INSERT INTO tickets (org_id, conversation_id, category, priority, summary) VALUES ($1,$2,$3,'P1','x') RETURNING id", [f.orgId, conv!.id, category]);
+      return (await queryOne<{ id: string }>("INSERT INTO handoffs (org_id, conversation_id, ticket_id, reason, status, accept_due_at) VALUES ($1,$2,$3,'cần người',$4,$5) RETURNING id", [
+        f.orgId,
+        conv!.id,
+        ticket!.id,
+        status,
+        due,
+      ]))!.id;
+    };
+    const maint = await mk("access");
+    const refund = await mk("payment_refund");
+    const accepted = await mk("maintenance", "accepted");
+    await escalateOverdueHandoffs(f.orgId, t0);
+    const to = async (id: string) =>
+      (await query<{ recipient_user_id: string }>("SELECT recipient_user_id FROM staff_notifications WHERE org_id = $1 AND dedupe_key LIKE $2", [f.orgId, `handoff:${id}:%`])).map((r) => r.recipient_user_id);
+    expect(await to(maint)).toEqual([f.actors.bp_staff.userId]);
+    // payment_refund ⇒ booking, chưa có người trực booking ⇒ hỗ trợ khách cấp 1
+    expect(await to(refund)).toEqual([f.actors.vn_manager.userId]);
+    expect(await to(accepted)).toEqual([]);
+    expect((await queryOne<{ status: string }>("SELECT status FROM handoffs WHERE id = $1", [accepted]))!.status).toBe("accepted");
   });
 });

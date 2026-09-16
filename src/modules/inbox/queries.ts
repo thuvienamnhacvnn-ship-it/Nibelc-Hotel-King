@@ -7,6 +7,10 @@ import { type Actor, assertCan, can } from "@/modules/auth/actor";
 export * from "./labels";
 import { CONVERSATION_KINDS, INBOX_CHANNEL_LABELS } from "./labels";
 
+/** Người thiếu booking.view_guest_contact thấy nhãn chung thay cho tên/SĐT khách (giống trang Booking). */
+export const GUEST_PLACEHOLDER = "Khách";
+const isGuestKind = (kind: string) => kind === "guest" || kind === "unknown";
+
 export interface InboxFilters {
   kind: (typeof CONVERSATION_KINDS)[number] | null;
   unread: boolean;
@@ -88,7 +92,11 @@ export async function listConversations(actor: Actor, f: InboxFilters, page: { p
     [...params, page.pageSize, page.offset],
   );
   for (const it of items) {
-    if (!showContact && it.kind !== "staff") it.contact_handle = null;
+    if (!showContact && isGuestKind(it.kind)) {
+      it.contact_handle = null;
+      it.contact_name = GUEST_PLACEHOLDER;
+      it.title = GUEST_PLACEHOLDER;
+    }
     if (!showBooking && it.booking_ref) it.booking_ref = "Đã gắn booking";
     if (it.last_body && it.last_body.length > 140) it.last_body = `${it.last_body.slice(0, 140)}…`;
   }
@@ -165,7 +173,12 @@ export async function getConversationDetail(actor: Actor, conversationId: string
     [conversationId, actor.orgId],
   );
   if (!conv) return null;
-  if (!can(actor, "booking.view_guest_contact") && conv.kind !== "staff") conv.contact_handle = null;
+  const showContact = can(actor, "booking.view_guest_contact");
+  if (!showContact && isGuestKind(conv.kind)) {
+    conv.contact_handle = null;
+    conv.contact_name = GUEST_PLACEHOLDER;
+    conv.title = GUEST_PLACEHOLDER;
+  }
   if (!can(actor, "booking.view")) {
     conv.booking_ref = conv.booking_ref ? "(đã gắn)" : null;
     conv.booking_id = null;
@@ -183,6 +196,8 @@ export async function getConversationDetail(actor: Actor, conversationId: string
        ORDER BY created_at ASC`,
       [conversationId, actor.orgId],
   );
+  // Tên hiển thị (pushName) của khách cũng là thông tin liên hệ. Nội dung khách tự gõ thì không che được.
+  if (!showContact) for (const m of messages) if (m.direction === "in" && m.author_type === "guest") m.author_name = GUEST_PLACEHOLDER;
 
   const tickets = await query<{
     id: string;

@@ -333,7 +333,7 @@ function ConversationPanel({
                       </span>
                     ) : null}
                     {m.approved_name ? <span className="faint">duyệt: {m.approved_name}</span> : null}
-                    {m.status === "failed" && m.error ? <span style={{ color: "var(--danger)" }}>{sendFailureLabel(m.error)}</span> : null}
+                    {(m.status === "failed" || m.status === "discarded") && m.error ?<span style={{ color: "var(--danger)" }}>{sendFailureLabel(m.error)}</span> : null}
                     {m.status === "failed" && perms.reply ? <RetryButton messageId={m.id} uncertain={(m.error ?? "").startsWith("uncertain")} /> : null}
                   </div>
                 ) : null}

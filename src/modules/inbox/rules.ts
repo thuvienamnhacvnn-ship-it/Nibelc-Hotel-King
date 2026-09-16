@@ -104,6 +104,8 @@ export function nameMatches(guestFullName: string, text: string): boolean {
 /** Chuỗi số chuẩn để so số điện thoại (bỏ ký tự, bỏ tiền tố 00). */
 export function phoneDigits(value: string | null | undefined): string | null {
   if (!value) return null;
+  // Chỉ jid cá nhân mới chứa số điện thoại; `@lid` (mã ẩn danh), nhóm, broadcast… thì không.
+  if (value.includes("@") && !value.trim().endsWith("@s.whatsapp.net")) return null;
   const d = value.replace(/@.*$/, "").replace(/\D/g, "").replace(/^00/, "");
   return d.length >= 8 ? d : null;
 }

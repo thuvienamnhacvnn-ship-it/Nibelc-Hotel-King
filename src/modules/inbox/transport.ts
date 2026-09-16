@@ -1,4 +1,5 @@
 import { queryOne } from "@/lib/db";
+import { SEND_LIMITS } from "./limits";
 
 /**
  * Gửi tin WhatsApp qua Evolution API v2 (`POST {url}/message/sendText/{instance}`, header `apikey`).
@@ -14,32 +15,72 @@ import { queryOne } from "@/lib/db";
  */
 export type SendResult = { ok: true; externalId: string } | { ok: false; reason: string };
 
-export const SEND_INTERVAL_MS = 3000;
+export const SEND_INTERVAL_MS = SEND_LIMITS.intervalMs;
 const SEND_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 4000;
 const DEFAULT_MAX_WAIT_MS = 15_000;
 
 /**
- * Giành một lượt gửi cho connector — tính theo DB nên đúng cả khi web, worker và nhiều tiến trình cùng gửi.
- * Một câu UPDATE nguyên tử: chỉ thành công khi lần thử gần nhất đã cách ít nhất SEND_INTERVAL_MS.
- * Mốc `connector_accounts.last_send_at` (migration 0007) dùng chung cho tin khách và thông báo đội — không cần khoá giữ trong lúc gọi mạng.
- * Thêm chốt phụ: không có tin hộp thư nào của connector vừa `sent` trong 3 giây (max(messages.sent_at)).
+ * Các lần gửi được tính vào trần giờ của một connector, mỗi dòng một mốc thời gian (dùng chung cho đếm và tính lượt kế tiếp).
+ * Tin hộp thư: đã gửi (sent_at), đang gửi / lỗi "không rõ" (locked_at). Thông báo đội (migration 0008 có connector_id):
+ * đã gửi (sent_at), đang gửi (locked_at). Tin đang gửi — kể cả tin hiện tại — được tính ⇒ trần không bao giờ bị vượt.
+ * Tham số: $1 connector, $2 org.
  */
-export async function reserveSendSlot(orgId: string, connectorId: string): Promise<boolean> {
+const HOUR_EVENTS = `
+  SELECT coalesce(m.sent_at, m.locked_at) AS at FROM messages m
+   WHERE m.connector_id = $1 AND m.org_id = $2 AND m.direction = 'out'
+     AND (m.sent_at > now() - interval '60 minutes'
+          OR (m.sent_at IS NULL AND m.locked_at > now() - interval '60 minutes'
+              AND (m.status = 'sending' OR (m.status = 'failed' AND m.error LIKE 'uncertain%'))))
+  UNION ALL
+  SELECT coalesce(s.sent_at, s.locked_at) FROM staff_notifications s
+   WHERE s.connector_id = $1 AND s.org_id = $2
+     AND (s.sent_at > now() - interval '60 minutes' OR (s.status = 'sending' AND s.locked_at > now() - interval '60 minutes'))`;
+
+/**
+ * Giành một lượt gửi cho connector — tính theo DB nên đúng cả khi web, worker và nhiều tiến trình cùng gửi.
+ * NƠI DUY NHẤT mọi đường gửi WhatsApp (hộp thư, thông báo đội) đi qua. Một câu UPDATE nguyên tử trên dòng connector:
+ *   - cách lần gửi trước ≥ SEND_LIMITS.intervalMs (`connector_accounts.last_send_at`) và không có tin hộp thư vừa `sent`;
+ *   - số lần gửi trong 60 phút (HOUR_EVENTS, cả hai bảng theo connector_id) < SEND_LIMITS.connectorPerHour.
+ * Dòng connector bị khoá khi UPDATE nên hai tiến trình không cùng lọt qua một chỗ trống.
+ */
+export async function reserveSendSlot(orgId: string, connectorId: string): Promise<"ok" | "interval" | "hour"> {
   const row = await queryOne<{ id: string }>(
     `UPDATE connector_accounts SET last_send_at = now()
       WHERE id = $1 AND org_id = $2 AND (last_send_at IS NULL OR last_send_at <= now() - make_interval(secs => $3))
         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.connector_id = $1 AND m.org_id = $2 AND m.sent_at > now() - make_interval(secs => $3))
+        AND (SELECT count(*) FROM (${HOUR_EVENTS}) e) < $4
       RETURNING id`,
-    [connectorId, orgId, SEND_INTERVAL_MS / 1000],
+    [connectorId, orgId, SEND_LIMITS.intervalMs / 1000, SEND_LIMITS.connectorPerHour],
   );
-  return !!row;
+  if (row) return "ok";
+  const over = await queryOne<{ over: boolean }>(`SELECT (SELECT count(*) FROM (${HOUR_EVENTS}) e) >= $3 AS over`, [connectorId, orgId, SEND_LIMITS.connectorPerHour]);
+  return over?.over ? "hour" : "interval";
 }
 
-/** jid cá nhân → số; jid nhóm giữ nguyên (Evolution nhận cả hai). */
+/**
+ * Lúc sớm nhất connector có lại chỗ trong trần giờ: mốc của lần gửi thứ (n − cap + 1) cũ nhất + 60 phút.
+ * Dùng để hoãn tin (available_at) thay vì thử lại mỗi vòng. Chưa chạm trần ⇒ now().
+ */
+export async function nextHourSlotAt(orgId: string, connectorId: string): Promise<Date> {
+  const row = await queryOne<{ at: Date }>(
+    `SELECT coalesce(
+        (SELECT at + interval '60 minutes' FROM (${HOUR_EVENTS}) e ORDER BY at DESC OFFSET ($3::int - 1) LIMIT 1),
+        now()) AS at`,
+    [connectorId, orgId, SEND_LIMITS.connectorPerHour],
+  );
+  return row?.at ?? new Date();
+}
+
+/**
+ * Người nhận cho Evolution: jid cá nhân `@s.whatsapp.net` → số; jid nhóm `@g.us` và jid ẩn danh `@lid` giữ NGUYÊN VĂN.
+ * `@lid` là mã ẩn danh của WhatsApp, KHÔNG phải số điện thoại — không bao giờ suy ra số từ nó. Hậu tố lạ ⇒ null.
+ */
 export function toEvolutionNumber(toJidOrPhone: string): string | null {
   const v = toJidOrPhone.trim();
   if (v.endsWith("@g.us")) return /^[\d-]+@g\.us$/.test(v) ? v : null;
+  if (v.endsWith("@lid")) return /^\d+(:\d+)?@lid$/.test(v) ? v : null;
+  if (v.includes("@") && !v.endsWith("@s.whatsapp.net")) return null;
   const digits = v.replace(/@.*$/, "").replace(/\D/g, "").replace(/^00/, "");
   return digits.length >= 8 && digits.length <= 15 ? digits : null;
 }
@@ -69,7 +110,11 @@ export async function sendWhatsAppText(orgId: string, connectorId: string, toJid
   if (!baseUrl || !instance || !apiKey || connector.status === "not_configured") return { ok: false, reason: "not_configured" };
 
   const deadline = Date.now() + (opts.maxWaitMs ?? DEFAULT_MAX_WAIT_MS);
-  while (!(await reserveSendSlot(orgId, connectorId))) {
+  for (;;) {
+    const slot = await reserveSendSlot(orgId, connectorId);
+    if (slot === "ok") break;
+    // Vượt trần giờ: không đứng chờ — người gọi trả tin về hàng đợi.
+    if (slot === "hour") return { ok: false, reason: "rate_limited_hour" };
     if (Date.now() >= deadline) return { ok: false, reason: "rate_limited" };
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -118,6 +163,10 @@ export const SEND_FAILURE_LABELS: Record<string, string> = {
   network_error: "Lỗi mạng khi gọi Evolution",
   switch_paused: "Công tắc gửi tin đang dừng",
   rate_limited: "Chưa tới lượt gửi (1 tin/3 giây mỗi connector)",
+  rate_limited_hour: "Đã chạm trần tin/giờ của số tổng đài — chờ lượt sau",
+  expired: "Quá hạn gửi — xem lại trước khi gửi lại",
+  taken_over: "Người đã tiếp quản hội thoại — bot không gửi",
+  bot_conversation_limit: "Bot đã trả lời nhiều trong hội thoại — chuyển người",
   uncertain: "Không rõ đã gửi hay chưa — kiểm trên điện thoại trước khi gửi lại",
   no_connector: "Hội thoại không gắn connector",
 };

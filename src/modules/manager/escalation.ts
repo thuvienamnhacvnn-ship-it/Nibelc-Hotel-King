@@ -35,6 +35,14 @@ export const TICKET_PURPOSE: Record<string, EscalationPurpose> = {
   other: "guest_support",
 };
 
+/** Handoff theo loại ticket gắn kèm (sự cố vào phòng/sửa chữa ⇒ bảo trì; tiền/đổi booking ⇒ booking). */
+export const HANDOFF_PURPOSE: Record<string, EscalationPurpose> = {
+  access: "maintenance",
+  maintenance: "maintenance",
+  payment_refund: "booking",
+  booking_change: "booking",
+};
+
 /** Hạn nhận cho cấp kế tiếp (phút). Đề xuất theo đặc tả: P1 nhận trong 5 phút — cần đội vận hành chốt. */
 export const ESCALATION_STEP_MINUTES = 5;
 
@@ -62,6 +70,21 @@ async function topOfChain(tx: Queryable, orgId: string): Promise<string[]> {
   return admins.rows.map((r) => r.user_id);
 }
 
+/** Mục đích chưa có ai trực (đang bật, tài khoản còn hoạt động) ⇒ rơi về hỗ trợ khách; hỗ trợ khách cũng trống thì chuỗi đi thẳng lên Leader. */
+export async function effectivePurpose(tx: Queryable, orgId: string, purpose: EscalationPurpose): Promise<EscalationPurpose> {
+  if (purpose === "guest_support") return purpose;
+  const { rows } = await tx.query(
+    "SELECT 1 FROM escalation_contacts ec JOIN users u ON u.id = ec.user_id AND u.org_id = ec.org_id AND u.active WHERE ec.org_id = $1 AND ec.purpose = $2 AND ec.active LIMIT 1",
+    [orgId, purpose],
+  );
+  return rows.length ? purpose : "guest_support";
+}
+
+async function minConfiguredLevel(tx: Queryable, orgId: string, purpose: EscalationPurpose): Promise<number> {
+  const { rows } = await tx.query<{ m: number | null }>("SELECT min(level) AS m FROM escalation_contacts WHERE org_id = $1 AND purpose = $2 AND active", [orgId, purpose]);
+  return rows[0]?.m ?? 0;
+}
+
 async function maxConfiguredLevel(tx: Queryable, orgId: string, purpose: EscalationPurpose): Promise<number> {
   const { rows } = await tx.query<{ m: number | null }>("SELECT max(level) AS m FROM escalation_contacts WHERE org_id = $1 AND purpose = $2 AND active", [orgId, purpose]);
   return rows[0]?.m ?? -1;
@@ -84,7 +107,7 @@ export async function escalateOverdueTickets(orgId: string, at: Date = now()) {
       const t = rows[0];
       // Kiểm lại sau khi khoá: người khác vừa nhận, hoặc lượt chạy trước vừa dời hạn.
       if (!t || !["new", "assigned"].includes(t.status) || !t.accept_due_at || new Date(t.accept_due_at) >= at) return;
-      const purpose = TICKET_PURPOSE[t.category] ?? "guest_support";
+      const purpose = await effectivePurpose(tx, orgId, TICKET_PURPOSE[t.category] ?? "guest_support");
       const maxLevel = await maxConfiguredLevel(tx, orgId, purpose);
       // Đã báo tới cấp Leader (cấp > cấu hình) mà vẫn chưa nhận: không đẩy tiếp vô hạn.
       if (t.escalation_level > Math.max(maxLevel, 0)) return;
@@ -114,7 +137,8 @@ export async function escalateOverdueTickets(orgId: string, at: Date = now()) {
 }
 
 /**
- * Yêu cầu chuyển người (handoff) quá hạn nhận ⇒ báo cấp kế tiếp theo mục đích hỗ trợ khách.
+ * Yêu cầu chuyển người (handoff) quá hạn nhận ⇒ báo cấp kế tiếp theo mục đích suy từ ticket gắn kèm (HANDOFF_PURPOSE;
+ * chưa có người trực thì hỗ trợ khách). Handoff đã nhận/huỷ/hẹn gọi lại (kể cả đóng do tiếp quản) không bị đẩy.
  * Hết cấp cấu hình ⇒ trạng thái `callback` (hẹn gọi lại) và báo Leader; KHÔNG bao giờ ghi là đã kết nối.
  * Cấp hiện tại lưu ở `handoffs.escalation_level` (0 = người nhận đầu tiên do hộp thư báo).
  */
@@ -127,16 +151,19 @@ export async function escalateOverdueHandoffs(orgId: string, at: Date = now()) {
   );
   for (const { id } of due) {
     await withTx(async (tx) => {
-      const { rows } = await tx.query<{ id: string; status: string; reason: string; conversation_id: string; accept_due_at: Date | null; escalation_level: number }>(
-        "SELECT id, status, reason, conversation_id, accept_due_at, escalation_level FROM handoffs WHERE id = $1 AND org_id = $2 FOR UPDATE",
+      const { rows } = await tx.query<{ id: string; status: string; reason: string; conversation_id: string; accept_due_at: Date | null; escalation_level: number; category: string | null; priority: string | null }>(
+        `SELECT h.id, h.status, h.reason, h.conversation_id, h.accept_due_at, h.escalation_level, t.category, t.priority
+           FROM handoffs h LEFT JOIN tickets t ON t.id = h.ticket_id AND t.org_id = h.org_id
+          WHERE h.id = $1 AND h.org_id = $2 FOR UPDATE OF h`,
         [id, orgId],
       );
       const h = rows[0];
       if (!h || !["requested", "escalated"].includes(h.status) || !h.accept_due_at || new Date(h.accept_due_at) >= at) return;
-      const level = h.escalation_level + 1;
-      const purpose: EscalationPurpose = "guest_support";
+      const purpose = await effectivePurpose(tx, orgId, (h.category && HANDOFF_PURPOSE[h.category]) || "guest_support");
+      // Cấp đầu thực tế là cấp thấp nhất đã cấu hình (hộp thư báo cấp đó) — không báo lại cùng người.
+      const level = Math.max(h.escalation_level, await minConfiguredLevel(tx, orgId, purpose)) + 1;
       const maxLevel = await maxConfiguredLevel(tx, orgId, purpose);
-      const basePayload = { handoff_id: h.id, reason: h.reason, level, link: `/hop-thu?c=${h.conversation_id}` };
+      const basePayload = { handoff_id: h.id, reason: h.reason, level, purpose, ...(h.priority ? { priority: h.priority } : {}), link: `/hop-thu?c=${h.conversation_id}` };
       if (level > maxLevel) {
         // Hết người dự phòng: hẹn gọi lại, báo người cao nhất để sắp xếp.
         await tx.query("UPDATE handoffs SET status = 'callback', escalation_level = $3, escalated_at = $4 WHERE id = $1 AND org_id = $2 AND status IN ('requested','escalated')", [h.id, orgId, level, at]);
