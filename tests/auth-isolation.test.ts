@@ -61,3 +61,18 @@ describe("Phân quyền và cách ly tổ chức", () => {
     });
   });
 });
+
+describe("Vai trò Leader", () => {
+  it("Leader duyệt được thay đổi và kiểm phòng, nhưng không quản trị tài khoản/kết nối", async () => {
+    const { permissionsFor } = await import("@/modules/auth/permissions");
+    const p = permissionsFor("leader");
+    for (const perm of ["booking.approve_change", "readiness.approve", "cleaning.manage", "revenue.view", "conflict.resolve", "import.apply", "reports.view"] as const) {
+      expect(p.has(perm)).toBe(true);
+    }
+    expect(p.has("users.manage")).toBe(false);
+    expect(p.has("connector.manage")).toBe(false);
+    const f = await makeFixture();
+    const leader = await query<{ id: string }>("INSERT INTO users (org_id, email, full_name, role, password_hash) VALUES ($1,$2,'Leader thử','leader','x') RETURNING id", [f.orgId, `leader-${uid()}@test.local`]);
+    expect(leader[0].id).toBeTruthy();
+  });
+});

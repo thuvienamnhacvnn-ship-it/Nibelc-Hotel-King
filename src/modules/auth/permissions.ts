@@ -4,11 +4,12 @@
  * Các điểm còn chờ chốt được ghi trong docs/QUYET-DINH-CAN-CHOT.md (ví dụ: vn_staff có xem doanh thu không).
  */
 
-export const ROLES = ["admin", "vn_manager", "vn_staff", "bp_coordinator", "bp_staff", "cleaner", "manager_viewer"] as const;
+export const ROLES = ["admin", "leader", "vn_manager", "vn_staff", "bp_coordinator", "bp_staff", "cleaner", "manager_viewer"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
   admin: "Quản trị hệ thống",
+  leader: "Leader — quyết định cuối",
   vn_manager: "Vietnam Team — phụ trách chính",
   vn_staff: "Vietnam Team",
   bp_coordinator: "Budapest Team — điều phối",
@@ -50,6 +51,8 @@ const ALL = new Set<Permission>(PERMISSIONS);
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   admin: ALL,
+  // Leader: xem và duyệt mọi nghiệp vụ; quản trị tài khoản/kỹ thuật vẫn thuộc admin.
+  leader: new Set<Permission>(PERMISSIONS.filter((p) => p !== "users.manage" && p !== "connector.manage")),
   vn_manager: new Set<Permission>([
     "booking.view",
     "booking.view_guest_contact",
