@@ -5,7 +5,7 @@
  */
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { startPgliteServer } from "./pglite-server";
 
 const port = Number(process.argv[2]);
 if (!port) {
@@ -13,8 +13,7 @@ if (!port) {
   process.exit(1);
 }
 const db = await PGlite.create({ extensions: { btree_gist } });
-const server = new PGLiteSocketServer({ db, port, host: "127.0.0.1", maxConnections: 100 });
-await server.start();
+const server = await startPgliteServer(db, { host: "127.0.0.1", port });
 console.log(`READY ${port}`);
 
 const stop = async () => {

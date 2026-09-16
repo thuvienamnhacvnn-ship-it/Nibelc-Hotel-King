@@ -106,6 +106,57 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     expect(readiness.get(f.units.whole)).toBe("unknown");
   });
 
+  it("QA C1/N2/N4: thay đổi chờ xác nhận chặn mọi bước; dọn lại xoá checklist; hủy việc đang dọn trả phòng về chưa dọn", async () => {
+    const { addDays, todayOps } = await import("@/lib/time");
+    const { pool } = await import("@/lib/db");
+    const { cancelTask } = await import("@/modules/cleaning/service");
+    const f = await makeFixture();
+    const today = todayOps();
+    const b = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, addDays(today, -2), today));
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_in", expectedVersion: await version(b.id) });
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_out", expectedVersion: await version(b.id) });
+    await runWorker();
+    const task = (await tasksFor(f.orgId))[0];
+    const cleaner = f.cleaners[0];
+    await assignTask(f.actors.bp_coordinator, task.id, { userId: cleaner.userId! });
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    const items = await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id]);
+    for (const item of items) await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
+    await finishTask(cleaner, task.id);
+    // N2: kiểm không đạt → checklist phải tích lại
+    await inspectTask(f.actors.bp_staff, task.id, { result: "fail", note: "Nhà tắm còn bẩn" });
+    const rechecked = await query<{ checked: boolean }>("SELECT checked FROM task_checklist_items WHERE task_id = $1", [task.id]);
+    expect(rechecked.every((r) => !r.checked)).toBe(true);
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    // C1: gắn cờ thay đổi chờ xác nhận thì tích checklist / hoàn thành bị chặn
+    await query("UPDATE cleaning_tasks SET change_ack_required = true, pending_change = '{\"cancel\":true}' WHERE id = $1", [task.id]);
+    await expectCode(toggleChecklistItem(cleaner, task.id, items[0].id, { checked: true }), "change_ack_required");
+    await expectCode(finishTask(cleaner, task.id), "change_ack_required");
+    await query("UPDATE cleaning_tasks SET change_ack_required = false, pending_change = NULL WHERE id = $1", [task.id]);
+    // N4: hủy khi đang dọn → phòng về "chưa dọn", không kẹt ở "đang dọn"
+    await cancelTask(f.actors.bp_coordinator, task.id, "Đổi người dọn");
+    expect((await readinessForUnits(pool(), f.orgId, [f.units.r1])).get(f.units.r1)).toBe("vacated_dirty");
+  });
+
+  it("QA C2: chỉ điều phối xác nhận khách rời, không cho việc tương lai", async () => {
+    const { addDays, todayOps } = await import("@/lib/time");
+    const { confirmVacated } = await import("@/modules/cleaning/service");
+    const f = await makeFixture();
+    const today = todayOps();
+    await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, addDays(today, -1), today));
+    await createBooking(f.actors.vn_staff, bookingInput(f.units.r2, today, addDays(today, 3)));
+    await runWorker();
+    const tasks = await tasksFor(f.orgId);
+    const todayTask = tasks.find((t) => t.service_date === today)!;
+    const futureTask = tasks.find((t) => t.service_date > today)!;
+    await expectCode(confirmVacated(f.actors.vn_staff, todayTask.id, "khách nhắn"), "forbidden");
+    await expectCode(confirmVacated(f.actors.bp_staff, todayTask.id, "khách nhắn"), "forbidden");
+    await expectCode(confirmVacated(f.actors.bp_coordinator, futureTask.id, "khách nhắn"), "service_date_in_future");
+    await confirmVacated(f.actors.bp_coordinator, todayTask.id, "Khách nhắn đã trả chìa");
+  });
+
   it("booking đã trả phòng trong quá khứ (nhập lịch sử) không sinh việc dọn quá hạn", async () => {
     const f = await makeFixture();
     const { addDays, todayOps } = await import("@/lib/time");

@@ -2,7 +2,7 @@
  * Postgres cho máy phát triển không cài được Postgres/Docker.
  *
  * PGlite là bản Postgres biên dịch sang WASM, chạy trong tiến trình Node.
- * `pglite-socket` bọc nó sau giao thức mạng của Postgres, nên công cụ migrate,
+ * `scripts/pglite-server.ts` bọc nó sau giao thức mạng của Postgres, nên công cụ migrate,
  * worker và ứng dụng đều kết nối như tới một server
  * Postgres bình thường — cùng một file migration chạy được ở cả hai nơi.
  *
@@ -29,7 +29,7 @@
  */
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { startPgliteServer } from "./pglite-server";
 import fs from "fs";
 import net from "net";
 import path from "path";
@@ -105,18 +105,8 @@ async function main() {
   }
 
   const db = await PGlite.create({ dataDir: DATA_DIR, extensions: { btree_gist } });
-  // Mặc định của pglite-socket là 1 kết nối và nó ĐÓNG THẲNG kết nối thứ hai.
-  // Next dev mở nhiều kết nối song song cho mỗi trang, nên phải nới rộng; PGlite
-  // vẫn xử lý truy vấn tuần tự bên trong nên đây chỉ là hàng chờ, không phải
-  // song song thật.
-  const server = new PGLiteSocketServer({
-    db,
-    port: PORT,
-    host: "127.0.0.1",
-    maxConnections: 200,
-    debug: process.env.DEV_PG_DEBUG === "1",
-  });
-  await server.start();
+  // Cầu nối riêng thay cho pglite-socket — xem scripts/pglite-server.ts (lỗi lệch giao thức khi lệnh có tham số bị lỗi).
+  const server = await startPgliteServer(db, { host: "127.0.0.1", port: PORT, log: (m) => console.log("[pglite]", m) });
 
   console.log(`PGlite đang lắng nghe giao thức Postgres tại 127.0.0.1:${PORT}`);
   console.log(`Thư mục dữ liệu: ${DATA_DIR}`);

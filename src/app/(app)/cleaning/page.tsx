@@ -149,7 +149,7 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
                   {t.next_arrival_at ? <span className="small">· khách đến {formatInstant(t.next_arrival_at, tz)}</span> : null}
                   {t.blocking_incidents ? <Badge tone="danger">Sự cố chặn nhận khách</Badge> : null}
                   <span className="spacer" />
-                  {perms.approve ? <TaskActions task={{ ...toActionTask(t, tz), changeAckRequired: false }} perms={{ manage: false, approve: true }} /> : null}
+                  {perms.approve ? <TaskActions task={toActionTask(t, tz)} perms={{ manage: false, approve: true }} /> : null}
                 </div>
               ))}
             </div>

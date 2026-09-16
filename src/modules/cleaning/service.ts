@@ -61,6 +61,13 @@ function assertVersion(task: TaskLock, expected: number | undefined) {
   }
 }
 
+/** Thay đổi từ booking chưa được xác nhận thì không làm tiếp bất kỳ bước nào của việc. */
+function assertNoPendingChange(task: TaskLock) {
+  if (task.change_ack_required) {
+    throw conflict("change_ack_required", "Việc có thay đổi từ booking chưa được xác nhận (có thể không cần dọn nữa). Xác nhận thay đổi trước.");
+  }
+}
+
 function assertOwner(actor: Actor, task: TaskLock) {
   if (!(can(actor, "cleaning.own") && task.assigned_to === actor.userId) && !can(actor, "cleaning.manage")) {
     throw forbidden("Chỉ cleaner được giao hoặc điều phối mới thao tác được việc này.");
@@ -117,16 +124,28 @@ export async function cancelTask(actor: Actor, taskId: string, reason: string) {
   return withTx(async (tx) => {
     const task = await lockTask(tx, actor, taskId);
     if (["passed", "cancelled"].includes(task.status)) throw conflict("invalid_transition", "Việc đã đóng.");
+    if (["in_progress", "awaiting_inspection"].includes(task.status)) {
+      // Phòng đã có người vào dọn nhưng chưa được kiểm: trả về "chưa dọn", không để kẹt ở "đang dọn".
+      await setReadinessForUnit(tx, actor.orgId, task.unit_id, "vacated_dirty", { taskId: task.id, userId: actor.userId, note: `Hủy việc dọn: ${reason}` });
+    }
     return move(tx, actor, task, "cancelled", "cancelled", { change_ack_required: false, pending_change: null }, { reason });
   });
 }
 
 /** Điều phối xác nhận khách đã rời phòng (khi không có dữ liệu check-out từ kênh). */
 export async function confirmVacated(actor: Actor, taskId: string, note: string) {
-  if (!can(actor, "cleaning.manage") && !can(actor, "booking.stay_status")) throw forbidden();
+  // Chỉ điều phối Budapest. Người khác ghi nhận trả phòng qua trạng thái lưu trú của booking.
+  if (!can(actor, "cleaning.manage")) throw forbidden();
   if (!note?.trim()) throw invalid("Ghi rõ căn cứ xác nhận khách đã rời phòng (ví dụ: khách nhắn đã trả chìa).");
   return withTx(async (tx) => {
     const task = await lockTask(tx, actor, taskId);
+    if (!["pending_assignment", "assigned", "accepted"].includes(task.status)) {
+      throw conflict("invalid_transition", "Chỉ xác nhận khách rời cho việc chưa bắt đầu dọn.");
+    }
+    const tz = (await tx.query<{ timezone: string }>("SELECT timezone FROM properties WHERE id = $1", [task.property_id])).rows[0]?.timezone;
+    if (task.service_date > localDateOf(now(), tz)) {
+      throw conflict("service_date_in_future", "Chưa tới ngày trả phòng của việc này — không xác nhận khách rời trước.");
+    }
     await setReadinessForUnit(tx, actor.orgId, task.unit_id, "vacated_dirty", { taskId: task.id, userId: actor.userId, note });
     await logTaskEvent(tx, actor.orgId, task.id, "vacancy_confirmed", task.status, task.status, { note }, { type: actor.kind, id: actor.userId });
     await writeAudit(tx, auditActorOf(actor), "cleaning.vacancy_confirmed", "cleaning_task", task.id, { note });
@@ -203,6 +222,7 @@ export async function toggleChecklistItem(actor: Actor, taskId: string, itemId: 
     const task = await lockTask(tx, actor, taskId);
     assertOwner(actor, task);
     if (task.status !== "in_progress") throw conflict("invalid_transition", "Chỉ đánh dấu checklist khi đang dọn.");
+    assertNoPendingChange(task);
     const { rows } = await tx.query(
       `UPDATE task_checklist_items SET checked = $3, checked_by = CASE WHEN $3 THEN $4::uuid END, checked_at = CASE WHEN $3 THEN now() END, note = $5
         WHERE id = $1 AND task_id = $2 RETURNING id`,
@@ -219,6 +239,7 @@ export async function finishTask(actor: Actor, taskId: string, input: { expected
     assertVersion(task, input.expectedVersion);
     assertOwner(actor, task);
     if (task.status !== "in_progress") throw conflict("invalid_transition", "Việc chưa ở trạng thái đang dọn.");
+    assertNoPendingChange(task);
     const missing = await tx.query<{ label: string }>("SELECT label FROM task_checklist_items WHERE task_id = $1 AND NOT checked ORDER BY sort_order", [taskId]);
     if (missing.rows.length) {
       throw new AppError("checklist_incomplete", `Còn ${missing.rows.length} mục checklist chưa xong.`, 422, { missing: missing.rows.map((r) => r.label) });
@@ -266,9 +287,12 @@ export async function inspectTask(actor: Actor, taskId: string, input: { result:
     const task = await lockTask(tx, actor, taskId);
     assertVersion(task, input.expectedVersion);
     if (task.status !== "awaiting_inspection") throw conflict("invalid_transition", "Việc chưa ở trạng thái chờ kiểm.");
+    assertNoPendingChange(task);
     if (input.result === "fail") {
       if (!input.note?.trim()) throw invalid("Ghi rõ hạng mục cần dọn lại.");
       await setReadinessForUnit(tx, actor.orgId, task.unit_id, "vacated_dirty", { taskId: task.id, userId: actor.userId, note: input.note });
+      // Dọn lại phải tích lại checklist từ đầu.
+      await tx.query("UPDATE task_checklist_items SET checked = false, checked_by = NULL, checked_at = NULL WHERE task_id = $1", [task.id]);
       return move(tx, actor, task, "needs_reclean", "inspection_failed", { accepted_at: null }, { note: input.note });
     }
     const unchecked = await tx.query("SELECT 1 FROM task_checklist_items WHERE task_id = $1 AND NOT checked LIMIT 1", [taskId]);
@@ -386,4 +410,3 @@ export function isOverdue(task: { due_at: Date | string; status: string }): bool
   return !["passed", "cancelled"].includes(task.status) && new Date(task.due_at).getTime() < now().getTime();
 }
 
-export { localDateOf };
