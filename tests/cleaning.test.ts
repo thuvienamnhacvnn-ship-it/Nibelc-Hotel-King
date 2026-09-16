@@ -244,3 +244,33 @@ describe("Ảnh bằng chứng bắt buộc", () => {
     await finishTask(cleaner, task.id);
   });
 });
+
+describe("QA2: dọn lại phải chụp ảnh mới", () => {
+  it("kiểm không đạt ⇒ ảnh cũ hết hiệu lực, hoàn thành lượt dọn lại cần ảnh mới", async () => {
+    const f = await makeFixture();
+    const b = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, "2026-10-01", "2026-10-03"));
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_in", expectedVersion: await version(b.id) });
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_out", expectedVersion: await version(b.id) });
+    await runWorker();
+    const task = (await tasksFor(f.orgId))[0];
+    const cleaner = f.cleaners[0];
+    const tick = async () => {
+      for (const item of await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id])) {
+        await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
+      }
+    };
+    await assignTask(f.actors.bp_coordinator, task.id, { userId: cleaner.userId! });
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    await tick();
+    await attachRequiredPhotos(task.id, cleaner.userId!);
+    await finishTask(cleaner, task.id);
+    await inspectTask(f.actors.bp_staff, task.id, { result: "fail", note: "Nhà tắm còn bẩn" });
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    await tick();
+    await expectCode(finishTask(cleaner, task.id), "photo_evidence_missing");
+    await attachRequiredPhotos(task.id, cleaner.userId!);
+    await finishTask(cleaner, task.id);
+  });
+});

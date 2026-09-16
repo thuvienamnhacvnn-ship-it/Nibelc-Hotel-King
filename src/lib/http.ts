@@ -58,6 +58,9 @@ export function api<P = Record<string, string>>(
       if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) {
         return jsonError(403, "cross_origin", "Yêu cầu từ nguồn khác bị chặn.");
       }
+      if (/%00/i.test(req.nextUrl.search) || req.nextUrl.search.includes("\u0000")) {
+        return jsonError(400, "invalid_characters", "Tham số chứa ký tự không hợp lệ.");
+      }
       const actor = await actorFromToken(req.cookies.get(SESSION_COOKIE)?.value, clientIp(req));
       if (!actor) return jsonError(401, "unauthenticated", "Phiên đăng nhập đã hết. Đăng nhập lại.");
       const params = (await ctx.params) as P;
@@ -75,8 +78,16 @@ export function api<P = Record<string, string>>(
 }
 
 export async function readJson(req: NextRequest): Promise<unknown> {
+  let text: string;
   try {
-    return await req.json();
+    text = await req.text();
+  } catch {
+    throw new AppError("invalid_json", "Body không phải JSON hợp lệ.", 400);
+  }
+  // PostgreSQL không lưu được ký tự NUL trong text — từ chối sớm thay vì để lỗi 500 ở tầng DB.
+  if (text.includes("\u0000") || /\\u0000/i.test(text)) throw new AppError("invalid_characters", "Dữ liệu chứa ký tự không hợp lệ.", 400);
+  try {
+    return JSON.parse(text);
   } catch {
     throw new AppError("invalid_json", "Body không phải JSON hợp lệ.", 400);
   }

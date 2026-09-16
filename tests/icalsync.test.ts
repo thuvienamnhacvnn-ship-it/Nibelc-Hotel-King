@@ -100,3 +100,22 @@ describe("iCal — chống gọi địa chỉ lạ", () => {
     }
   });
 });
+
+describe("QA2: iCal bỏ qua và quyền đồng bộ", () => {
+  it("lệch đã bỏ qua không mở lại; người chỉ xem không đồng bộ được; đồng bộ dồn dập bị chặn", async () => {
+    const { resolveFinding, syncFeedNow } = await import("@/modules/icalsync/service");
+    const f = await makeFixture();
+    const today = todayOps();
+    const listing = (await queryOne<{ id: string }>("SELECT id FROM channel_listings WHERE unit_id = $1", [f.units.r1]))!.id;
+    const feed = await addIcalFeed(f.actors.admin, { listingId: listing, url: "https://www.airbnb.com/calendar/ical/9.ics?s=z" });
+    const cal = ics([{ start: addDays(today, 10), end: addDays(today, 12) }]);
+    await syncFeed(feed.id, async () => ({ ok: true, status: 200, text: cal }));
+    const finding = (await queryOne<{ id: string }>("SELECT id FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [feed.id]))!;
+    await resolveFinding(f.actors.vn_manager, finding.id, { status: "dismissed", note: "Chủ nhà tự khoá trên kênh" });
+    await syncFeed(feed.id, async () => ({ ok: true, status: 200, text: cal }));
+    expect(await query("SELECT id FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [feed.id])).toHaveLength(0);
+    await expectCode(syncFeedNow(f.actors.manager_viewer, feed.id), "forbidden");
+    await expectCode(syncFeedNow(f.actors.vn_staff, feed.id), "forbidden");
+    await expectCode(syncFeedNow(f.actors.admin, feed.id), "too_soon");
+  });
+});

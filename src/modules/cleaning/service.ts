@@ -304,6 +304,8 @@ export async function inspectTask(actor: Actor, taskId: string, input: { result:
       await setReadinessForUnit(tx, actor.orgId, task.unit_id, "vacated_dirty", { taskId: task.id, userId: actor.userId, note: input.note });
       // Dọn lại phải tích lại checklist từ đầu.
       await tx.query("UPDATE task_checklist_items SET checked = false, checked_by = NULL, checked_at = NULL WHERE task_id = $1", [task.id]);
+      // Ảnh của lượt dọn bị chê không còn là bằng chứng — phải chụp lại sau khi dọn lại.
+      await tx.query("UPDATE task_photos SET status = 'replaced' WHERE task_id = $1 AND status = 'active'", [task.id]);
       return move(tx, actor, task, "needs_reclean", "inspection_failed", { accepted_at: null }, { note: input.note });
     }
     const unchecked = await tx.query("SELECT 1 FROM task_checklist_items WHERE task_id = $1 AND NOT checked LIMIT 1", [taskId]);

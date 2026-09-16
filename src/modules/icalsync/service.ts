@@ -121,11 +121,12 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
     ];
     const seenIds: string[] = [];
     for (const f of found) {
-      const existing = await tx.query<{ id: string }>(
-        "SELECT id FROM calendar_sync_findings WHERE feed_id = $1 AND kind = $2 AND start_date = $3 AND end_date = $4 AND status = 'open'",
+      const existing = await tx.query<{ id: string; status: string }>(
+        "SELECT id, status FROM calendar_sync_findings WHERE feed_id = $1 AND kind = $2 AND start_date = $3 AND end_date = $4 AND status IN ('open','dismissed') ORDER BY status = 'open' DESC LIMIT 1",
         [feed.id, f.kind, f.start, f.end],
       );
       if (existing.rows[0]) {
+        // Người đã chọn "bỏ qua" đúng khoảng này thì giữ nguyên, không mở lại.
         await tx.query("UPDATE calendar_sync_findings SET last_seen_at = now() WHERE id = $1", [existing.rows[0].id]);
         seenIds.push(existing.rows[0].id);
       } else {
@@ -180,9 +181,13 @@ export async function syncDueFeeds(fetcher: Fetcher = defaultFetcher) {
 }
 
 export async function syncFeedNow(actor: Actor, feedId: string) {
-  assertCan(actor, "connector.view");
-  const owned = await queryOne("SELECT 1 FROM ical_feeds WHERE id = $1 AND org_id = $2", [feedId, actor.orgId]);
+  if (!actor.permissions.has("connector.manage") && !actor.permissions.has("conflict.resolve")) assertCan(actor, "connector.manage");
+  const owned = await queryOne<{ recent: boolean }>(
+    "SELECT (last_attempt_at IS NOT NULL AND last_attempt_at > now() - interval '60 seconds') AS recent FROM ical_feeds WHERE id = $1 AND org_id = $2",
+    [feedId, actor.orgId],
+  );
   if (!owned) throw notFound("link iCal");
+  if (owned.recent) throw conflict("too_soon", "Vừa đồng bộ link này dưới 1 phút trước — chờ một chút rồi thử lại.");
   return syncFeed(feedId);
 }
 
