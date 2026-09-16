@@ -1,0 +1,18 @@
+.matrix td,
+.matrix th {
+  white-space: nowrap;
+}
+.center {
+  text-align: center !important;
+}
+.sub {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+.on {
+  background: var(--ok-bg);
+  color: var(--ok);
+}

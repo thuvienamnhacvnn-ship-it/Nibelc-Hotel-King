@@ -314,12 +314,14 @@ export async function reportIncident(
 export async function resolveIncident(actor: Actor, incidentId: string, note: string) {
   if (!can(actor, "cleaning.manage")) throw forbidden();
   return withTx(async (tx) => {
-    const { rows } = await tx.query<{ unit_id: string; task_id: string | null }>(
-      "UPDATE task_incidents SET status = 'resolved', resolved_by = $2, resolved_at = now() WHERE id = $1 AND org_id = $3 AND status <> 'resolved' RETURNING unit_id, task_id",
+    const { rows } = await tx.query<{ unit_id: string; task_id: string | null; severity: string }>(
+      "UPDATE task_incidents SET status = 'resolved', resolved_by = $2, resolved_at = now() WHERE id = $1 AND org_id = $3 AND status <> 'resolved' RETURNING unit_id, task_id, severity",
       [incidentId, actor.userId, actor.orgId],
     );
     if (!rows[0]) throw notFound("sự cố đang mở");
     await writeAudit(tx, auditActorOf(actor), "cleaning.incident_resolved", "task_incident", incidentId, { note });
+    // Sự cố không chặn chưa từng đổi trạng thái phòng — đóng nó cũng không được đổi.
+    if (rows[0].severity !== "blocking") return { ok: true };
     // Không tự chuyển phòng sang "sẵn sàng" — vẫn phải qua kiểm phòng.
     const still = await tx.query("SELECT 1 FROM task_incidents WHERE unit_id = $1 AND severity = 'blocking' AND status <> 'resolved' LIMIT 1", [rows[0].unit_id]);
     if (!still.rows.length) {

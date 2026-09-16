@@ -95,7 +95,7 @@ export async function ingestBookingEvent(orgId: string, connectorId: string, raw
       }
       const inboundId = inserted.rows[0].id;
       const outcome = await applyEvent(tx, connector, event);
-      await tx.query("UPDATE inbound_events SET status = $2, booking_id = $3, result = $4, processed_at = now() WHERE id = $1", [
+      await tx.query("UPDATE inbound_events SET status = $2, booking_id = $3, result = $4, processed_at = clock_timestamp() WHERE id = $1", [
         inboundId,
         outcome.status,
         outcome.bookingId,
@@ -198,12 +198,13 @@ async function applyEvent(tx: Queryable, connector: ConnectorRow, event: Inbound
   const total = b.adults != null || b.children != null ? (b.adults ?? 0) + (b.children ?? 0) : null;
 
   if (!booking) {
-    const guest = await tx.query<{ id: string }>("INSERT INTO guests (org_id, full_name) VALUES ($1,$2) RETURNING id", [orgId, b.guestName || "(chưa có tên từ kênh)"]);
+    const isDemo = connector.status === "demo";
+    const guest = await tx.query<{ id: string }>("INSERT INTO guests (org_id, full_name, is_demo) VALUES ($1,$2,$3) RETURNING id", [orgId, b.guestName || "(chưa có tên từ kênh)", isDemo]);
     const created = await tx.query<BookingRow>(
       `INSERT INTO bookings (org_id, source_channel, source_account, external_ref, guest_id, booking_status, payment_status, check_in_date, check_out_date,
-                             adults, children, total_guests, total_amount_minor, currency, source_version, source_updated_at, last_synced_at, booking_created_at)
-       VALUES ($1,$2,$3,$4,$5,'confirmed','channel_collects',$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),coalesce($14, now())) RETURNING *`,
-      [orgId, channel, event.sourceAccount ?? "", event.externalRef, guest.rows[0].id, b.checkInDate, b.checkOutDate, b.adults ?? null, b.children ?? null, total, b.totalAmountMinor ?? null, (b.currency ?? "EUR").toUpperCase(), event.sourceVersion ?? null, occurredAt],
+                             adults, children, total_guests, total_amount_minor, currency, source_version, source_updated_at, last_synced_at, booking_created_at, is_demo)
+       VALUES ($1,$2,$3,$4,$5,'confirmed','channel_collects',$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),coalesce($14, now()),$15) RETURNING *`,
+      [orgId, channel, event.sourceAccount ?? "", event.externalRef, guest.rows[0].id, b.checkInDate, b.checkOutDate, b.adults ?? null, b.children ?? null, total, b.totalAmountMinor ?? null, (b.currency ?? "EUR").toUpperCase(), event.sourceVersion ?? null, occurredAt, isDemo],
     );
     booking = created.rows[0];
     const alloc = await insertAllocation(tx, orgId, booking.id, { unitId, startDate: b.checkInDate, endDate: b.checkOutDate, guests: total }, { onConflict: "mark" });

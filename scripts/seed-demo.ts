@@ -28,6 +28,13 @@ type Role = import("../src/modules/auth/permissions").Role;
 
 export const DEMO_PASSWORD = "Demo-Nibelc-2026";
 
+/** Service tạo booking/khách/việc không biết là DEMO — gắn cờ cho mọi bản ghi của tổ chức DEMO. */
+async function markDemo(orgId: string) {
+  for (const table of ["bookings", "guests", "cleaning_tasks"]) {
+    await query(`UPDATE ${table} SET is_demo = true WHERE org_id = $1 AND NOT is_demo`, [orgId]);
+  }
+}
+
 async function main() {
   const exists = await queryOne("SELECT id FROM organizations WHERE slug = 'nibelc-demo'");
   if (exists) {
@@ -219,6 +226,7 @@ async function main() {
     booking: { listingExternalId: "DEMO-AB-A002", checkInDate: d(1), checkOutDate: d(2), guestName: "Khách Demo trùng lịch", adults: 2 },
   });
 
+  await markDemo(org.id);
   const stats = await drainOutbox(handlers);
   console.log("Worker lượt đầu:", stats);
 
@@ -243,6 +251,7 @@ async function main() {
   if (tC) await assignTask(thao, tC.id, { userId: actors["cleaner.b"].userId! });
 
   await drainOutbox(handlers);
+  await markDemo(org.id);
 
   // Gia hạn đã duyệt khi việc đã được nhận → việc phải chờ xác nhận thay đổi (mô phỏng quy tắc)
   const counts = await queryOne<{ bookings: number; tasks: number; conflicts: number; crs: number }>(

@@ -181,7 +181,7 @@ code,
   margin: 4px 0 0;
   color: var(--text-muted);
 }
-.menu-toggle {
+.btn.menu-toggle {
   display: none;
 }
 
@@ -553,7 +553,7 @@ dialog.dialog::backdrop {
   .shell[data-menu-open="true"] .sidebar {
     transform: translateX(0);
   }
-  .menu-toggle {
+  .btn.menu-toggle {
     display: inline-flex;
   }
   .topbar {

@@ -106,6 +106,28 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     expect(readiness.get(f.units.whole)).toBe("unknown");
   });
 
+  it("đóng sự cố không chặn không làm phòng mất trạng thái sẵn sàng", async () => {
+    const f = await makeFixture();
+    const b = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, "2026-10-01", "2026-10-03"));
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_in", expectedVersion: await version(b.id) });
+    await setStayStatus(f.actors.bp_staff, b.id, { status: "checked_out", expectedVersion: await version(b.id) });
+    await runWorker();
+    const task = (await tasksFor(f.orgId))[0];
+    const cleaner = f.cleaners[0];
+    await assignTask(f.actors.bp_coordinator, task.id, { userId: cleaner.userId! });
+    await acceptTask(cleaner, task.id);
+    await startTask(cleaner, task.id);
+    for (const item of await query<{ id: string }>("SELECT id FROM task_checklist_items WHERE task_id = $1", [task.id])) {
+      await toggleChecklistItem(cleaner, task.id, item.id, { checked: true });
+    }
+    const minor = await reportIncident(cleaner, task.id, { kind: "missing_supplies", severity: "low", description: "Thiếu giấy vệ sinh" });
+    await finishTask(cleaner, task.id);
+    await inspectTask(f.actors.bp_staff, task.id, { result: "pass" });
+    await resolveIncident(f.actors.bp_coordinator, minor.id, "Đã bổ sung");
+    const { pool } = await import("@/lib/db");
+    expect((await readinessForUnits(pool(), f.orgId, [f.units.r1])).get(f.units.r1)).toBe("ready");
+  });
+
   it("hủy trước khi khách đến thì hủy việc chưa nhận; hủy sau khi khách đã ở thì vẫn giữ việc dọn", async () => {
     const f = await makeFixture();
     const before = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, "2026-10-01", "2026-10-03"));

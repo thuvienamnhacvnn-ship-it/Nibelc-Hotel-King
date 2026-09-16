@@ -1,0 +1,70 @@
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  grid-column: span 2;
+}
+.table td {
+  font-size: 13px;
+}
+.notes {
+  min-width: 180px;
+  max-width: 280px;
+}
+.alloc {
+  white-space: nowrap;
+}
+.badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.cancelled td {
+  color: var(--text-faint);
+}
+.diff {
+  display: grid;
+  grid-template-columns: max-content 1fr 1fr;
+  gap: 2px 12px;
+  font-size: 13px;
+}
+.before {
+  color: var(--danger);
+  text-decoration: line-through;
+  word-break: break-word;
+}
+.after {
+  color: var(--ok);
+  word-break: break-word;
+}
+.unitGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 12px;
+}
+.unitOption {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 700px) {
+  .checks {
+    grid-column: auto;
+  }
+}
