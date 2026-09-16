@@ -53,7 +53,7 @@ export function Shell({ nav, topbar, children }: { nav: ShellNavGroup[]; topbar:
     <div className="shell" data-menu-open={open}>
       <aside className="sidebar" aria-label="Điều hướng chính">
         <Link href="/" className="brand" aria-label="Vietduc Hotel — về trang chính">
-          {/* Logo Việt Đức Group (nền trong suốt, có mảng đen): đặt trên tấm trắng để nổi trên menu tối */}
+          {/* Logo Việt Đức Group nền trong suốt, đặt thẳng trên menu */}
           <span className="brand-plate">
             <img src="/logo-vietduc.png" alt="Việt Đức Group" width={110} height={104} />
           </span>

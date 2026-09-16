@@ -118,9 +118,6 @@ code,
 }
 .brand-plate {
   display: block;
-  background: #fff;
-  border-radius: var(--radius-sm);
-  padding: 8px 18px;
   line-height: 0;
 }
 .brand-plate img {
