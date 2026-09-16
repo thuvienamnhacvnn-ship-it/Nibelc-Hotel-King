@@ -44,12 +44,13 @@ export function Shell({ nav, topbar, children }: { nav: ShellNavGroup[]; topbar:
   return (
     <div className="shell" data-menu-open={open}>
       <aside className="sidebar" aria-label="Điều hướng chính">
-        <div className="brand">
-          <span aria-hidden style={{ background: "#fff", color: "var(--navy-900)", borderRadius: 6, padding: "2px 6px" }}>
-            N
+        <Link href="/" className="brand" aria-label="Nibelc Hotel King — về trang chính">
+          {/* Logo xanh đậm: đặt trên nền trắng để đọc được trên menu tối */}
+          <span className="brand-plate">
+            <img src="/logo-nibelc.svg" alt="NIBELC" width={132} height={36} />
           </span>
-          Nibelc Hotel King
-        </div>
+          <span className="brand-name">Hotel King</span>
+        </Link>
         {nav.map((g) => (
           <div key={g.group}>
             <div className="nav-group">{g.group}</div>
