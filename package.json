@@ -1,0 +1,42 @@
+{
+  "name": "nibelc-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3080",
+    "build": "next build",
+    "start": "next start --port 3080",
+    "db:dev": "tsx scripts/dev-postgres.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed-demo.ts",
+    "db:reset": "tsx scripts/reset-demo.ts",
+    "worker": "tsx src/worker/main.ts",
+    "import:excel": "tsx scripts/import-excel.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "lucide-react": "1.46.0",
+    "next": "16.2.12",
+    "pg": "8.23.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "4.5.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@types/node": "22.20.3",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+.pgdata*
+data/private/
+uploads/
+next-env.d.ts
+*.tsbuildinfo
+# Tệp làm việc cục bộ của công cụ phát triển — không đưa vào repo
+.claude/
+CLAUDE.md
+AGENTS.md
+_workspace/
