@@ -13,7 +13,7 @@ export default async function LoginPage() {
       <div className="card" style={{ width: "min(400px, 100%)" }}>
         <div className="card-pad stack">
           <div>
-            <img src="/logo-nibelc.svg" alt="NIBELC" width={220} height={60} style={{ display: "block", marginBottom: 10 }} />
+            <img src="/logo-nibelc.png" alt="NIBELC GmbH" width={300} height={96} style={{ display: "block", margin: "0 auto 12px", maxWidth: "100%", height: "auto" }} />
             <h1>Nibelc Hotel King</h1>
             <p className="muted" style={{ margin: "4px 0 0" }}>
               Vận hành căn hộ cho thuê — Budapest

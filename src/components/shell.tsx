@@ -45,9 +45,9 @@ export function Shell({ nav, topbar, children }: { nav: ShellNavGroup[]; topbar:
     <div className="shell" data-menu-open={open}>
       <aside className="sidebar" aria-label="Điều hướng chính">
         <Link href="/" className="brand" aria-label="Nibelc Hotel King — về trang chính">
-          {/* Logo xanh đậm: đặt trên nền trắng để đọc được trên menu tối */}
+          {/* Logo chuẩn NIBELC (nền trắng): đặt trên tấm trắng để đọc được trên menu tối */}
           <span className="brand-plate">
-            <img src="/logo-nibelc.svg" alt="NIBELC" width={132} height={36} />
+            <img src="/logo-nibelc.png" alt="NIBELC GmbH" width={196} height={63} />
           </span>
           <span className="brand-name">Hotel King</span>
         </Link>

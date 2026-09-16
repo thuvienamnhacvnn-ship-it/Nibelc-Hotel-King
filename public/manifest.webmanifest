@@ -6,5 +6,5 @@
   "background_color": "#f5f7fa",
   "theme_color": "#0b1f3a",
   "lang": "vi",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "icons": [{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }]
 }

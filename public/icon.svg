@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#ffffff"/>
-  <path d="M8 22 C 26 12, 44 8, 58 9 C 46 12, 30 17, 12 25 Z" fill="#ee631b"/>
-  <g transform="translate(9 26) scale(0.312) translate(0 -210)">
-    <polygon fill="#044c9d" points="147.4 308.17 93.8 308.2 33.21 235.6 32.78 308.3 .01 308.31 0 210.1 53.36 210.15 114.24 282.79 114.75 210.11 147.38 210.11 147.4 308.17"/>
-  </g>
-</svg>
