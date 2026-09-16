@@ -50,7 +50,7 @@ async function main() {
   const d = (n: number) => addDays(today, n);
   const hash = await hashPassword(DEMO_PASSWORD);
 
-  const org = (await queryOne<{ id: string }>("INSERT INTO organizations (slug, name, is_demo) VALUES ('nibelc-demo', 'NIBELC (DEMO)', true) RETURNING id"))!;
+  const org = (await queryOne<{ id: string }>("INSERT INTO organizations (slug, name, is_demo) VALUES ('nibelc-demo', 'Vietduc Hotel (DEMO)', true) RETURNING id"))!;
   const other = (await queryOne<{ id: string }>("INSERT INTO organizations (slug, name, is_demo) VALUES ('don-vi-thu-cach-ly', 'Đơn vị thử cách ly (DEMO)', true) RETURNING id"))!;
 
   const users: [string, string, Role][] = [

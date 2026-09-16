@@ -44,12 +44,12 @@ export function Shell({ nav, topbar, children }: { nav: ShellNavGroup[]; topbar:
   return (
     <div className="shell" data-menu-open={open}>
       <aside className="sidebar" aria-label="Điều hướng chính">
-        <Link href="/" className="brand" aria-label="Nibelc Hotel King — về trang chính">
-          {/* Logo chuẩn NIBELC (nền trắng): đặt trên tấm trắng để đọc được trên menu tối */}
+        <Link href="/" className="brand" aria-label="Vietduc Hotel — về trang chính">
+          {/* Logo Việt Đức Group (nền trong suốt, có mảng đen): đặt trên tấm trắng để nổi trên menu tối */}
           <span className="brand-plate">
-            <img src="/logo-nibelc.png" alt="NIBELC GmbH" width={196} height={63} />
+            <img src="/logo-vietduc.png" alt="Việt Đức Group" width={110} height={104} />
           </span>
-          <span className="brand-name">Hotel King</span>
+          <span className="brand-name">Vietduc Hotel</span>
         </Link>
         {nav.map((g) => (
           <div key={g.group}>

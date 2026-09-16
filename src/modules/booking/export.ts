@@ -76,7 +76,7 @@ export async function exportBookingsXlsx(actor: Actor, filters: BookingFilters):
   ];
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Nibelc Hotel King";
+  wb.creator = "Vietduc Hotel";
   wb.created = new Date();
   const ws = wb.addWorksheet("Booking", { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = columns.map((c) => ({ header: c.header, width: c.width }));

@@ -1,4 +1,4 @@
-# API `/api/v1` — Nibelc Hotel King
+# API `/api/v1` — Vietduc Hotel (VD Hotel)
 
 Tài liệu dành cho người viết code (agent QA/UI, tích hợp sau này). Nguồn sự thật là code trong `src/app/api/v1/**/route.ts` — tài liệu này liệt kê lại, không thay thế code.
 

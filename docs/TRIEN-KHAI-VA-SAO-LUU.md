@@ -1,6 +1,6 @@
 # Triển khai và sao lưu
 
-**Trạng thái: đây là đề xuất kiến trúc, chưa phải việc đã làm.** Chưa có VPS cho Nibelc Hotel King, chưa chạy lệnh deploy nào, chưa diễn tập backup/restore thật. Mọi con số RPO/RTO dưới đây là đề xuất chưa được đội vận hành duyệt.
+**Trạng thái: đây là đề xuất kiến trúc, chưa phải việc đã làm.** Chưa có VPS cho Vietduc Hotel, chưa chạy lệnh deploy nào, chưa diễn tập backup/restore thật. Mọi con số RPO/RTO dưới đây là đề xuất chưa được đội vận hành duyệt.
 
 ## Khác biệt dev/production
 
@@ -53,12 +53,12 @@ npm run worker         # tiến trình riêng, cũng nên có supervisor
 ```ini
 # /etc/systemd/system/nibelc-web.service
 [Unit]
-Description=Nibelc Hotel King — web
+Description=Vietduc Hotel — web
 After=network.target postgresql.service
 
 [Service]
-WorkingDirectory=/opt/nibelc-hotel-king
-EnvironmentFile=/opt/nibelc-hotel-king/.env.production
+WorkingDirectory=/opt/vd-hotel
+EnvironmentFile=/opt/vd-hotel/.env.production
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 User=nibelc

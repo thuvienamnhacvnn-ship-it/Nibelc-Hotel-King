@@ -1,4 +1,4 @@
-/* Nibelc Hotel King — hệ thiết kế vận hành: nền sáng, chữ đậm dễ đọc, navy là màu chính, màu trạng thái nhất quán. */
+/* Vietduc Hotel — hệ thiết kế vận hành: nền sáng, chữ đậm dễ đọc, navy là màu chính, màu trạng thái nhất quán. */
 :root {
   --navy-900: #0b1f3a;
   --navy-800: #11294b;
@@ -108,7 +108,7 @@ code,
 .brand {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   padding: 4px 8px 16px;
   color: #fff;
@@ -120,11 +120,11 @@ code,
   display: block;
   background: #fff;
   border-radius: var(--radius-sm);
-  padding: 6px 6px;
+  padding: 8px 18px;
   line-height: 0;
 }
 .brand-plate img {
-  width: 196px;
+  width: 110px;
   height: auto;
 }
 .brand-name {
@@ -132,7 +132,7 @@ code,
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 13px;
-  color: #f5c542;
+  color: #e0b25f;
 }
 .nav-group {
   margin: 14px 8px 6px;
