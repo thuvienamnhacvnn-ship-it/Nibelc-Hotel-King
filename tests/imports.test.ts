@@ -9,7 +9,7 @@ import { createBooking } from "@/modules/booking/service";
 import { buildLookup, createAliasesFromUnitNames } from "@/modules/imports/aliases";
 import { ISSUE_DEFS, normalizeUnitAlias, parseBookingWorkbook } from "@/modules/imports/excel";
 import { getImportBatch, listImportRows } from "@/modules/imports/queries";
-import { applyImport, previewImport } from "@/modules/imports/service";
+import { applyImport, discardImport, previewImport } from "@/modules/imports/service";
 import { expectCode, makeFixture, uid } from "./helpers";
 
 const FIXTURE = path.join(process.cwd(), "fixtures", "demo-lich-dat-phong.xlsx");
@@ -54,7 +54,7 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
     const { lookup } = buildLookup(DEMO_UNITS.map((u) => ({ ...u, unitId: null })), { fromNames: true });
     const result = await parseBookingWorkbook(fixture(), { lookup });
     const th = result.rows.filter((r) => r.sheet === "TH");
-    expect(th).toHaveLength(27);
+    expect(th).toHaveLength(28);
     const row = (n: number) => th.find((r) => r.rowNumber === thRow(n))!;
     const codes = (n: number) => row(n).issues.map((i) => i.code);
 
@@ -66,6 +66,9 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
     expect(row(2).disposition).toBe("ready");
     expect(row(2).parsed.unit?.code).toBe("B001");
     expect(row(3).parsed.unit?.code).toBe("B010"); // mã ghi thẳng
+    // Mã cũng có ở sheet Hủy ⇒ dòng TH vào hàng kiểm tra, không được ready
+    expect(codes(3)).toContain("listed_in_cancel_sheet");
+    expect(row(3).disposition).toBe("needs_review");
     // Mã lặp sau trim: cả hai dòng, không dòng nào bị xoá
     expect(row(4).disposition).toBe("duplicate_in_file");
     expect(row(5).disposition).toBe("duplicate_in_file");
@@ -77,7 +80,7 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
     expect(codes(10)).toContain("booked_date_cell_ambiguous");
     expect(row(10).disposition).toBe("ready"); // chỉ cảnh báo
     expect(row(10).parsed.bookedDate).toBe("2026-03-04"); // không tự đảo
-    expect(codes(11)).toEqual(expect.arrayContaining(["note_payment", "channel_unknown", "house_sheet_mismatch"]));
+    expect(codes(11)).toEqual(expect.arrayContaining(["payment_note", "channel_unknown", "house_sheet_mismatch"]));
     expect(row(11).parsed.paymentNote).toBe("20e TM");
     expect(codes(12)).toContain("status_conflict");
     expect(codes(13)).toContain("unit_unmapped");
@@ -95,6 +98,11 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
     expect(codes(25)).toContain("stay_date_ambiguous");
     expect(codes(26)).toContain("booked_after_checkin");
     expect(codes(27)).toContain("room_type_mismatch");
+    // Ghi chú vừa có kênh vừa có khoản thu: kênh nhận ra, khoản thu tách + cờ, thông điệp không chép số tiền
+    expect(row(28).parsed).toMatchObject({ channel: "booking_com", paymentNote: "Booking 460,86e TM" });
+    expect(codes(28)).toContain("payment_note");
+    expect(row(28).disposition).toBe("ready");
+    expect(JSON.stringify(row(28).issues)).not.toContain("460");
 
     // Sheet nhà chỉ đối chiếu: dòng trùng TH không vào lô, mã chỉ có ở sheet nhà vào dạng skipped
     const house = result.sheets.find((s) => s.name === "Demo A")!;
@@ -110,6 +118,8 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
     expect(cancel[0].issues.map((i) => i.code)).toEqual(expect.arrayContaining(["cancel_sheet", "also_in_source_sheet", "no_show_mentioned"]));
     expect(cancel[1].issues.map((i) => i.code)).toContain("cancel_mentioned");
     expect(result.sheets.find((s) => s.name === "DS Phòng")?.role).toBe("other");
+    // Không cho chọn sheet Hủy làm nguồn
+    await expect(parseBookingWorkbook(fixture(), { lookup, sourceSheet: "Hủy" })).rejects.toMatchObject({ code: "cancel_sheet_as_source" });
 
     // Mọi mã lý do ở mức phân tích file đều được fixture phủ (các mã còn lại chỉ phát sinh khi đối chiếu DB / áp dụng)
     const seen = new Set(result.rows.flatMap((r) => r.issues.map((i) => i.code)));
@@ -170,6 +180,19 @@ describe("Nhập Excel vào database", () => {
     expect(first.raw.columns["KHÁCH"]).toBe("[ẩn]");
     expect(first.raw.columns["SĐT"]).toBe("[ẩn]");
     expect(first.parsed?.guestName).toBe("[ẩn]");
+    // Có quyền liên hệ khách nhưng không có revenue.view: ghi chú khoản thu bị ẩn
+    const noMoney: Actor = systemActor(ctx.orgId, "user", ["import.preview", "booking.view_guest_contact"]);
+    const moneyRow = (await listImportRows(noMoney, preview.batchId, { issue: "payment_note" }, page)).items.find((r) => r.row_number === thRow(28))!;
+    expect(moneyRow.raw.columns["GHI CHÚ"]).toBe("[ẩn khoản thu]");
+    expect(JSON.stringify(moneyRow)).not.toContain("460");
+    expect(moneyRow.raw.columns["KHÁCH"]).toBe("Khách Demo 28");
+    // Lọc theo lý do chỉ nhận khoá thật, không nhận khoá của prototype
+    expect((await listImportRows(ctx.actors.vn_staff, preview.batchId, { issue: "toString" }, page)).total).toBe(preview.stats.total);
+    await expectCode(previewImport(ctx.actors.vn_staff, { fileName: "x.xlsx", data: fixture() }, { sourceSheet: "Hủy" }), "cancel_sheet_as_source");
+    // id không phải UUID ⇒ 404; huỷ lô cần quyền áp dụng
+    await expectCode(applyImport(ctx.actors.vn_manager, "not-a-uuid"), "not_found");
+    await expectCode(discardImport(ctx.actors.vn_manager, "not-a-uuid"), "not_found");
+    await expectCode(discardImport(ctx.actors.vn_staff, preview.batchId), "forbidden");
     const visible = await listImportRows(ctx.actors.vn_staff, preview.batchId, { issue: "unit_moved" }, page);
     expect(visible.items.map((r) => r.row_number)).toContain(thRow(7));
     expect(visible.items.every((r) => r.issues.some((i) => i.code === "unit_moved"))).toBe(true);
@@ -214,6 +237,9 @@ describe("Nhập Excel vào database", () => {
     );
     expect(booking).toMatchObject({ source_channel: "booking_com", external_ref: "1000000001", stay_status: "expected", booking_status: "confirmed", total_guests: 2, unit_code: "A001", created_by: manager.userId });
     expect(booking?.booking_created_at).not.toBeNull();
+    const money = await queryOne<{ channel_note: string | null; ops_note: string | null }>("SELECT b.channel_note, b.ops_note FROM bookings b JOIN import_rows r ON r.booking_id = b.id WHERE r.batch_id = $1 AND r.row_number = $2", [first.batchId, thRow(28)]);
+    expect(money?.channel_note).toContain("khoản thu");
+    expect(JSON.stringify(money)).not.toContain("460");
     const ambiguous = await queryOne<{ booking_created_at: Date | null }>("SELECT b.booking_created_at FROM bookings b JOIN import_rows r ON r.booking_id = b.id WHERE r.batch_id = $1 AND r.row_number = $2", [first.batchId, thRow(10)]);
     expect(ambiguous?.booking_created_at).toBeNull(); // ô Date mơ hồ không được dùng làm ngày tạo
     const history = await queryOne<{ actor_type: string; source: string }>("SELECT actor_type, source FROM booking_changes WHERE booking_id = $1 AND change_type = 'imported'", [at(1).booking_id]);
@@ -242,5 +268,45 @@ describe("Nhập Excel vào database", () => {
     const again = await applyImport(manager, third.batchId, { skipCheckOutBefore: "2026-09-16" });
     expect(again.applied).toBe(0);
     expect(again.errors).toBe(1);
+  });
+
+  it("hai lượt áp dụng cùng lúc: một lượt chạy, lượt kia 409; mã đã có ở tài khoản kênh khác ⇒ đã có; booking tổ chức DEMO mang nhãn DEMO", async () => {
+    setClock(() => new Date("2026-09-16T08:00:00Z"));
+    const org = await makeDemoCatalogOrg();
+    await createAliasesFromUnitNames(org.actors.admin);
+    const manager = org.actors.vn_manager;
+    const preview = await previewImport(manager, { fileName: "demo-lich-dat-phong.xlsx", data: fixture() });
+    // Booking do connector tạo (có source_account) cùng kênh + mã với dòng 20 — tạo sau xem trước
+    await createBooking(manager, { sourceChannel: "booking_com", sourceAccount: "acc-demo", externalRef: "HMDEMO0020", guest: { fullName: "Khách Demo kênh" }, checkInDate: "2027-04-01", checkOutDate: "2027-04-02", allocations: [{ unitId: org.demoUnits.C001 }] });
+
+    const settled = await Promise.allSettled([
+      applyImport(manager, preview.batchId, { skipCheckOutBefore: "2026-09-16" }),
+      applyImport(manager, preview.batchId, { skipCheckOutBefore: null }),
+    ]);
+    const ok = settled.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof applyImport>>> => r.status === "fulfilled");
+    const failed = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    expect(ok).toHaveLength(1);
+    expect(failed.map((f) => (f.reason as { code: string }).code)).toEqual(["batch_applying"]);
+    const run = ok[0].value;
+
+    const rows = await query<{ disposition: string; n: number }>("SELECT disposition, count(*)::int AS n FROM import_rows WHERE batch_id = $1 GROUP BY disposition", [preview.batchId]);
+    const byD = Object.fromEntries(rows.map((r) => [r.disposition, r.n]));
+    expect(byD.applied ?? 0).toBe(run.applied);
+    expect(byD.ready ?? 0).toBe(0);
+    const imported = await queryOne<{ n: number }>("SELECT count(*)::int AS n FROM bookings WHERE org_id = $1 AND source_account = ''", [org.orgId]);
+    expect(imported?.n).toBe(run.applied);
+    const audits = await query<{ action: string; n: number }>("SELECT action, count(*)::int AS n FROM audit_log WHERE org_id = $1 AND entity_id = $2 GROUP BY action", [org.orgId, preview.batchId]);
+    expect(Object.fromEntries(audits.map((a) => [a.action, a.n]))).toMatchObject({ "import.apply_started": 1, "import.apply_finished": 1 });
+    const batch = await getImportBatch(manager, preview.batchId);
+    expect(batch?.options).not.toHaveProperty("applying");
+
+    const dup = await query<{ source_account: string }>("SELECT source_account FROM bookings WHERE org_id = $1 AND external_ref = 'HMDEMO0020'", [org.orgId]);
+    expect(dup.map((d) => d.source_account)).toEqual(["acc-demo"]);
+    const row20 = await queryOne<{ disposition: string }>("SELECT disposition FROM import_rows WHERE batch_id = $1 AND sheet = 'TH' AND row_number = $2", [preview.batchId, thRow(20)]);
+    expect(row20?.disposition).toBe("already_imported");
+
+    const demo = await query<{ b: boolean; g: boolean }>("SELECT b.is_demo AS b, g.is_demo AS g FROM bookings b JOIN guests g ON g.id = b.guest_id WHERE b.org_id = $1 AND b.source_account = ''", [org.orgId]);
+    expect(demo.length).toBeGreaterThan(0);
+    expect(demo.every((d) => d.b && d.g)).toBe(true);
   });
 });

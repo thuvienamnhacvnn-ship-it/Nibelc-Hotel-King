@@ -147,11 +147,10 @@ async function readBlocks(buffer: Buffer | Uint8Array | ArrayBuffer): Promise<Bl
  * "abc@gmail.commatkhau1" KHÔNG khớp (bị bỏ) thay vì lọt một phần mật khẩu vào tên miền.
  */
 export function extractEmails(line: string): string[] {
-  const out: string[] = [];
-  for (const m of line.matchAll(/(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:com|net|org|hu|vn|de|io|co|info|biz|eu|uk|me)(?![A-Za-z0-9.])/gi)) {
-    out.push(m[0].toLowerCase());
-  }
-  return out;
+  // Trước email chỉ được là đầu dòng, khoảng trắng hoặc dấu phân cách ":" "–" "-": chuỗi dính liền phía trước
+  // ("pw#host@gmail.com") không khớp. Mỗi dòng chỉ lấy email ĐẦU TIÊN — mật khẩu có dạng email đứng sau không bị giữ.
+  const m = /(?<=^|[\s:：–—-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:com|net|org|hu|vn|de|io|co|info|biz|eu|uk|me)(?![A-Za-z0-9.@])/i.exec(line);
+  return m ? [m[0].toLowerCase()] : [];
 }
 
 function channelOfText(s: string): Channel | null {

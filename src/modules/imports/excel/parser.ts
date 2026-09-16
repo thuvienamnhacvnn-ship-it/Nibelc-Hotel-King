@@ -262,12 +262,14 @@ function interpretRow(sheet: string, row: SheetRow, lookup: UnitLookup): ParsedI
   const channel = detectChannel(note);
   let paymentNote: string | null = null;
   if (!externalRef) add("missing_ref", "Dòng không có mã đặt phòng — không thể chống nhập lặp.");
+  // Khoản thu có thể đứng riêng ("20e TM") hoặc lẫn với kênh ("Booking 460,86e TM"). Thông điệp không chép số tiền —
+  // người thiếu quyền doanh thu vẫn đọc được danh sách lý do.
+  if (note && looksLikePayment(note)) {
+    paymentNote = note;
+    add("payment_note", "Cột ghi chú có khoản thu — đã tách ra ghi chú thu tiền (chưa đối soát), không đưa vào ghi chú booking.");
+  }
   if (!channel) {
-    if (note && looksLikePayment(note)) {
-      paymentNote = note;
-      add("note_payment", `Cột ghi chú là khoản thu "${note}" — đã tách ra ghi chú thu tiền.`);
-    }
-    add("channel_unknown", note ? `Ghi chú "${note}" không cho biết kênh bán.` : "Cột ghi chú trống — không biết kênh bán.");
+    add("channel_unknown", paymentNote ? "Ghi chú chỉ có khoản thu — không biết kênh bán." : note ? `Ghi chú "${note}" không cho biết kênh bán.` : "Cột ghi chú trống — không biết kênh bán.");
   }
   if (externalRef && channel) {
     const numeric = /^\d+$/.test(externalRef);
@@ -402,9 +404,14 @@ export interface SheetInspection {
   suggestedRole: SheetRole;
 }
 
+export function isCancelSheetName(name: string): boolean {
+  return sheetKey(name) === "huy";
+}
+
 function roleOf(name: string, source: string, hasHeader: boolean): SheetRole {
+  // Sheet Hủy luôn là hàng kiểm tra, kể cả khi ai đó chọn nó làm nguồn.
+  if (isCancelSheetName(name)) return "cancel";
   if (sheetKey(name) === sheetKey(source)) return "source";
-  if (sheetKey(name) === "huy") return "cancel";
   return hasHeader ? "house" : "other";
 }
 
@@ -426,6 +433,7 @@ export async function inspectWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array,
 export async function parseBookingWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array, opts: ParseOptions): Promise<ParseResult> {
   const wb = await loadWorkbook(buffer);
   const wanted = opts.sourceSheet ?? "TH";
+  if (isCancelSheetName(wanted)) throw new ParseError("cancel_sheet_as_source", "Không dùng sheet Hủy làm sheet nguồn — dòng Hủy chỉ vào hàng kiểm tra.");
   const sourceWs = wb.worksheets.find((ws) => sheetKey(ws.name) === sheetKey(wanted));
   if (!sourceWs) throw new ParseError("source_sheet_missing", `File không có sheet "${wanted}".`);
   const sourceHeader = findHeader(sourceWs);
@@ -469,6 +477,10 @@ export async function parseBookingWorkbook(buffer: Buffer | ArrayBuffer | Uint8A
         r.issues.unshift(issue("cancel_sheet", "Dòng nằm ở sheet Hủy — không tự coi là booking đã hủy hay còn hiệu lực."));
         if (r.parsed.externalRef && byRef.has(r.parsed.externalRef)) {
           r.issues.push(issue("also_in_source_sheet", `Mã cũng có ở sheet ${sourceWs.name} dòng ${byRef.get(r.parsed.externalRef)!.map((x) => x.rowNumber).join(", ")}.`));
+          // Dòng sheet nguồn cùng mã cũng phải vào hàng kiểm tra: không biết booking còn hiệu lực hay đã hủy.
+          for (const s of byRef.get(r.parsed.externalRef)!) {
+            s.issues.push(issue("listed_in_cancel_sheet", `Mã cũng nằm ở sheet "${ws.name}" dòng ${sr.rowNumber} — cần xác nhận booking còn hiệu lực hay đã hủy.`, { sheet: ws.name, row: sr.rowNumber }));
+          }
         }
         r.disposition = dispositionOf(r.issues);
         rows.push(r);

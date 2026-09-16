@@ -63,6 +63,13 @@ describe("Đọc danh mục docx Vietnam Team", () => {
     expect(extractEmails("Airbnb: a.b@example.com – pass123#")).toEqual(["a.b@example.com"]);
     expect(extractEmails("Booking: x@example.com–Pw1#")).toEqual(["x@example.com"]);
     expect(extractEmails("dính liền: y@example.comMatKhau9")).toEqual([]);
+    // Chuỗi dính liền phía trước email không được nhận
+    expect(extractEmails("Airbnb: pw1#host@example.com")).toEqual([]);
+    expect(extractEmails("Airbnb: (Nguyên căn)pw1host@example.com")).toEqual([]);
+    expect(extractEmails("Airbnb:host@example.com")).toEqual(["host@example.com"]);
+    expect(extractEmails("Airbnb –host@example.com")).toEqual(["host@example.com"]);
+    // Mật khẩu có dạng email đứng sau: chỉ lấy email đầu tiên
+    expect(extractEmails("host@example.com – pw1@abc.com")).toEqual(["host@example.com"]);
   });
 
   it("tách nhà, sản phẩm, tài nguyên, listing và điểm cần xác nhận", async () => {

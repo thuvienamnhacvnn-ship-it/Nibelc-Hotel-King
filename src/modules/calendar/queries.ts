@@ -193,7 +193,7 @@ export async function calendarData(actor: Actor, params: CalendarParams) {
     allocations,
     blocks,
     cells: Object.fromEntries(cells),
-    conflictCount: new Set(allocations.filter((a) => a.status === "conflict").map((a) => a.allocation_id)).size,
+    conflictCount: new Set(allocations.filter((a) => a.status === "conflict" && a.end_date > start).map((a) => a.allocation_id)).size,
     showGuest,
   };
 }

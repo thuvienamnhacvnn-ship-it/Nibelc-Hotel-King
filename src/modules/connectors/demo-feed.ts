@@ -11,7 +11,7 @@ import { findConflicts } from "@/modules/inventory/inventory";
 /**
  * Nguồn sự kiện DEMO: sinh sự kiện giả lập GẮN NHÃN DEMO rồi đi qua đúng đường nhận thật (ingestBookingEvent),
  * để thấy xử lý trùng / sai thứ tự / đổi ngày / hủy / xung đột. Chỉ chạy trên connector status = 'demo'.
- * Không gọi kênh ngoài nào. Độ trễ nguồn → nhận là giả lập (thời điểm phát sinh lùi vài giây).
+ * Booking tạo ra mang is_demo do ingest kế thừa từ connector demo. Không gọi kênh ngoài nào. Độ trễ nguồn → nhận là giả lập (thời điểm phát sinh lùi vài giây).
  */
 
 export const DEMO_SCENARIOS = ["new", "resend", "stale", "dates", "cancel", "conflict"] as const;
@@ -233,12 +233,6 @@ export async function runDemoScenario(actor: Actor, connectorId: string, raw: un
 
   const event = await buildEvent(actor, connector, scenario, externalRef ?? null);
   const result: IngestResult = await ingestBookingEvent(actor.orgId, connector.id, event);
-
-  // Booking do nguồn DEMO tạo phải mang nhãn DEMO (ingest chưa tự kế thừa từ connector — xem báo cáo).
-  if (result.bookingId && (scenario === "new" || scenario === "conflict") && (result.status === "applied" || result.status === "conflict")) {
-    await pool().query("UPDATE guests SET is_demo = true WHERE org_id = $1 AND id = (SELECT guest_id FROM bookings WHERE id = $2 AND org_id = $1)", [actor.orgId, result.bookingId]);
-    await pool().query("UPDATE bookings SET is_demo = true WHERE id = $1 AND org_id = $2 AND NOT is_demo", [result.bookingId, actor.orgId]);
-  }
 
   await writeAudit(null, auditActorOf(actor), "connector.demo_event", "connector", connector.id, {
     scenario,

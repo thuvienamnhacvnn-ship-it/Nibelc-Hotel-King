@@ -135,7 +135,7 @@ export default async function BatchPage({ params, searchParams }: { params: Prom
                           <Link href={qs({ issue: code, disposition: null, page: null })}>{ISSUE_LABELS[code] ?? code}</Link>
                           <div className="small faint mono">{code}</div>
                         </td>
-                        <td>{code in ISSUE_DEFS && ISSUE_DEFS[code as keyof typeof ISSUE_DEFS].severity === "block" ? <Badge tone="warn">Chặn áp dụng</Badge> : <Badge>Cảnh báo</Badge>}</td>
+                        <td>{Object.hasOwn(ISSUE_DEFS, code) && ISSUE_DEFS[code as keyof typeof ISSUE_DEFS].severity === "block" ? <Badge tone="warn">Chặn áp dụng</Badge> : <Badge>Cảnh báo</Badge>}</td>
                         <td>{n}</td>
                       </tr>
                     ))}

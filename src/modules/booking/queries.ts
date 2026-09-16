@@ -69,7 +69,7 @@ export function parseBookingFilters(src: ParamSource): BookingFilters {
     pendingOnly: param(src, "pending") === "1",
     conflictOnly: param(src, "conflict") === "1",
     q: param(src, "q")?.slice(0, 100) ?? null,
-    sort: sort && sort in BOOKING_SORTS ? (sort as BookingSort) : "check_in_asc",
+    sort: sort && Object.hasOwn(BOOKING_SORTS, sort) ? (sort as BookingSort) : "check_in_asc",
   };
 }
 
@@ -306,6 +306,8 @@ export const CHANGE_SOURCE_LABELS: Record<string, string> = {
 
 export async function listChangeRequests(actor: Actor, opts: { status?: string | null; bookingId?: string | null; limit?: number } = {}): Promise<ChangeRequestView[]> {
   assertCan(actor, "booking.view");
+  // Id sai dạng: không chạy câu SQL sẽ lỗi (bẫy PGlite) — không có bản ghi nào khớp.
+  if (opts.bookingId != null && !isUuid(opts.bookingId)) return [];
   const params: unknown[] = [actor.orgId];
   const where = ["cr.org_id = $1"];
   if (opts.status) {
@@ -362,6 +364,7 @@ export interface ConflictView {
 
 export async function listConflicts(actor: Actor, opts: { status?: string | null; bookingId?: string | null } = {}): Promise<ConflictView[]> {
   if (!can(actor, "booking.view") && !can(actor, "conflict.resolve")) assertCan(actor, "booking.view");
+  if (opts.bookingId != null && !isUuid(opts.bookingId)) return [];
   const params: unknown[] = [actor.orgId];
   const where = ["ic.org_id = $1"];
   if (opts.status) {
@@ -431,6 +434,21 @@ export interface BookingChangeView {
   source_ref: string | null;
   reason: string | null;
   created_at: Date;
+}
+
+/** Khoá liên hệ khách trong chi tiết nhật ký — cùng quy tắc với /api/v1/audit. */
+const GUEST_KEYS = /^(guest|guest_?name|full_?name|email|phone|guestName|fullName)$/i;
+function redactGuestKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactGuestKeys);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, GUEST_KEYS.test(k) ? "[ẩn — cần quyền xem liên hệ khách]" : redactGuestKeys(v)]));
+  }
+  return value;
+}
+
+/** Yêu cầu thay đổi thuộc tổ chức của actor — kiểm trước để id của tổ chức khác trả 404 thống nhất. */
+export async function assertChangeRequestInOrg(actor: Actor, id: string) {
+  if (!isUuid(id) || !(await queryOne("SELECT 1 FROM change_requests WHERE id = $1 AND org_id = $2", [id, actor.orgId]))) throw notFound("yêu cầu thay đổi");
 }
 
 /** Bỏ các trường nhạy cảm khỏi ảnh chụp trước/sau theo quyền người xem. */
@@ -521,6 +539,7 @@ export async function getBookingDetail(actor: Actor, bookingId: string) {
         [actor.orgId, bookingId],
       )
     : null;
+  const auditView = audit && !can(actor, "booking.view_guest_contact") ? audit.map((a) => ({ ...a, detail: redactGuestKeys(a.detail) as Record<string, unknown> | null })) : audit;
 
   // Sức chứa nhỏ nhất theo đêm của phân bổ đang giữ — để xem trước yêu cầu đổi số khách.
   const cap = await queryOne<{ min_capacity: number | null }>(
@@ -547,7 +566,7 @@ export async function getBookingDetail(actor: Actor, bookingId: string) {
     changeRequests,
     conflicts,
     tasks,
-    audit,
+    audit: auditView,
     minCapacity: cap?.min_capacity ?? null,
     propertyTimes: { checkInFrom: times?.check_in_from ?? "15:00", checkOutAt: times?.check_out_at ?? "10:00" },
   };

@@ -17,7 +17,8 @@ export default async function AuditPage({ searchParams }: { searchParams: SP }) 
   const sp = await searchParams;
   const str = (k: string) => (typeof sp[k] === "string" && sp[k] ? (sp[k] as string) : null);
   const filter = Object.fromEntries(KEYS.map((k) => [k, str(k)])) as Record<(typeof KEYS)[number], string | null>;
-  const page = Math.max(1, Number(str("page")) || 1);
+  const rawPage = Number(str("page"));
+  const page = Number.isSafeInteger(rawPage) && rawPage >= 1 && rawPage <= 100_000 ? rawPage : 1;
   const pageSize = 50;
   const [data, options] = await Promise.all([listAudit(actor, filter, { page, pageSize, offset: (page - 1) * pageSize }), auditFilterOptions(actor)]);
   const filtered = KEYS.some((k) => filter[k]);

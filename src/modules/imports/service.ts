@@ -28,6 +28,14 @@ import {
 
 export const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Lượt áp dụng bị ngắt (tiến trình chết) để lại cờ; quá hạn này coi như đã dừng. */
+const APPLY_STALE_MS = 30 * 60_000;
+
+function assertBatchId(batchId: string) {
+  if (!UUID_RE.test(batchId)) throw notFound("lô nhập");
+}
+
 export interface UploadedFile {
   fileName: string;
   data: Buffer;
@@ -173,7 +181,11 @@ interface ReadyRow {
   issues: RowIssue[];
 }
 
-type RowOutcome = { disposition: Extract<Disposition, "applied" | "already_imported">; bookingId: string | null } | { disposition: "error"; error: RowIssue };
+type RowOutcome =
+  | { disposition: Extract<Disposition, "applied" | "already_imported">; bookingId: string | null }
+  | { disposition: "error"; error: RowIssue }
+  /** Dòng không còn 'ready' (lượt khác đã xử lý) — bỏ qua, không đếm */
+  | { disposition: "not_ready" };
 
 /**
  * Nhập một dòng thành booking trong giao dịch riêng.
@@ -181,7 +193,7 @@ type RowOutcome = { disposition: Extract<Disposition, "applied" | "already_impor
  * (đã đề xuất bổ sung tuỳ chọn cho lõi). Tồn phòng vẫn giữ bằng insertAllocation (khoá + kiểm + EXCLUDE);
  * lịch sử ghi bằng recordBookingChange; khoá mã nguồn dùng cùng khoá tư vấn với service lõi.
  */
-async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: string): Promise<RowOutcome> {
+async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: string, isDemo: boolean): Promise<RowOutcome> {
   const p = row.parsed;
   if (!p.externalRef || !p.channel || !p.unit?.unitId || !p.checkIn || !p.checkOut || !p.guestName) {
     return { disposition: "error", error: issue("apply_error", "Dòng thiếu dữ liệu bắt buộc (mã, kênh, phòng, ngày, tên khách) — phân tích lại file.") };
@@ -190,34 +202,41 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
   const unitId = p.unit.unitId;
   try {
     return await withTx(async (tx) => {
+      // Nhận dòng: chỉ xử lý nếu vẫn 'ready' (khoá dòng tới hết giao dịch) — hai lượt áp dụng không ghi đè kết quả của nhau.
+      const claim = await tx.query("SELECT 1 FROM import_rows WHERE id = $1 AND disposition = 'ready' FOR UPDATE", [row.id]);
+      if (!claim.rows.length) return { disposition: "not_ready" as const };
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 7332))", [`${importer.orgId}|${channel}||${ref}`]);
+      // Đã có booking cùng kênh + mã ở BẤT KỲ tài khoản nào (connector ghi source_account) ⇒ không tạo thêm.
       const existing = await tx.query<{ id: string }>(
-        "SELECT id FROM bookings WHERE org_id = $1 AND source_channel = $2 AND source_account = '' AND external_ref = $3",
+        "SELECT id FROM bookings WHERE org_id = $1 AND source_channel = $2 AND external_ref = $3 ORDER BY created_at LIMIT 1",
         [importer.orgId, channel, ref],
       );
-      if (existing.rows[0]) return { disposition: "already_imported" as const, bookingId: existing.rows[0].id };
+      if (existing.rows[0]) {
+        await tx.query("UPDATE import_rows SET disposition = 'already_imported', booking_id = $2 WHERE id = $1", [row.id, existing.rows[0].id]);
+        return { disposition: "already_imported" as const, bookingId: existing.rows[0].id };
+      }
 
-      const guest = await tx.query<{ id: string }>("INSERT INTO guests (org_id, full_name, phone) VALUES ($1,$2,$3) RETURNING id", [
+      const guest = await tx.query<{ id: string }>("INSERT INTO guests (org_id, full_name, phone, is_demo) VALUES ($1,$2,$3,$4) RETURNING id", [
         importer.orgId,
         guestName.slice(0, 200),
         p.guestPhone?.slice(0, 50) ?? null,
+        isDemo,
       ]);
       // Khách đã/đang ở theo lịch thì không biết thực tế đã nhận/trả phòng chưa ⇒ 'unknown'.
       const stayStatus = checkIn <= today ? "unknown" : "expected";
       // Ngày nhận booking mơ hồ (ô Date ngày ≤ 12) hoặc sau ngày nhận phòng thì để trống — không ghi một ngày có thể sai.
       const bookedAt = p.bookedDate && !p.bookedDateAmbiguous && p.bookedDate <= checkIn ? localToUtc(p.bookedDate, "00:00", importer.timezone) : null;
-      const channelNote = [p.note && !p.paymentNote ? `Ghi chú Excel: ${p.note}` : null, p.paymentNote ? `Khoản thu ghi trong Excel (chưa đối soát): ${p.paymentNote}` : null]
-        .filter(Boolean)
-        .join("\n");
+      // channel_note hiện cho mọi người có booking.view ⇒ không chép khoản thu/số tiền; nguyên văn còn ở dòng nhập (quyền import).
+      const channelNote = p.paymentNote ? "Ghi chú Excel có khoản thu chưa đối soát — xem lô nhập Excel." : p.note ? `Ghi chú Excel: ${p.note}` : null;
       const opsNote = [p.checkinNote ? `Giờ check-in (Excel): ${p.checkinNote}` : null, p.statusText ? `Tình trạng (Excel): ${p.statusText}` : null, `Nhập từ sheet ${row.sheet} dòng ${row.row_number}`]
         .filter(Boolean)
         .join("\n");
       const created = await tx.query<{ id: string; org_id: string; version: number }>(
         `INSERT INTO bookings (org_id, source_channel, source_account, external_ref, guest_id, booking_status, stay_status, payment_status,
-                               check_in_date, check_out_date, total_guests, currency, booking_created_at, channel_note, ops_note, created_by)
-         VALUES ($1,$2,'',$3,$4,'confirmed',$5,'unknown',$6,$7,$8,'EUR',$9,$10,$11,$12)
+                               check_in_date, check_out_date, total_guests, currency, booking_created_at, channel_note, ops_note, created_by, is_demo)
+         VALUES ($1,$2,'',$3,$4,'confirmed',$5,'unknown',$6,$7,$8,'EUR',$9,$10,$11,$12,$13)
          RETURNING id, org_id, version`,
-        [importer.orgId, channel, ref, guest.rows[0].id, stayStatus, checkIn, checkOut, p.totalGuests, bookedAt, channelNote || null, opsNote.slice(0, 2000), importer.userId],
+        [importer.orgId, channel, ref, guest.rows[0].id, stayStatus, checkIn, checkOut, p.totalGuests, bookedAt, channelNote, opsNote.slice(0, 2000), importer.userId, isDemo],
       );
       const booking = created.rows[0];
       await insertAllocation(tx, importer.orgId, booking.id, { unitId, startDate: checkIn, endDate: checkOut, guests: p.totalGuests }, { onConflict: "throw" });
@@ -228,6 +247,7 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
         sourceRef: `${batchId}:${row.sheet}:${row.row_number}`,
       });
       await writeAudit(tx, auditActorOf(importer), "booking.import", "booking", booking.id, { batchId, sheet: row.sheet, rowNumber: row.row_number, sourceChannel: channel, externalRef: ref });
+      await tx.query("UPDATE import_rows SET disposition = 'applied', booking_id = $2 WHERE id = $1", [row.id, booking.id]);
       return { disposition: "applied" as const, bookingId: booking.id };
     });
   } catch (error) {
@@ -245,30 +265,52 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
  */
 export async function applyImport(actor: Actor, batchId: string, opts: ApplyOptions = {}): Promise<ApplyResult> {
   assertCan(actor, "import.apply");
+  assertBatchId(batchId);
   if (opts.skipCheckOutBefore && !/^\d{4}-\d{2}-\d{2}$/.test(opts.skipCheckOutBefore)) throw invalid("Mốc ngày không hợp lệ (YYYY-MM-DD).");
 
-  await withTx(async (tx) => {
-    const { rows } = await tx.query<{ id: string; status: string; file_sha256: string }>(
-      "SELECT id, status, file_sha256 FROM import_batches WHERE id = $1 AND org_id = $2 FOR UPDATE",
+  const runId = crypto.randomUUID();
+  const isDemo = await withTx(async (tx) => {
+    const { rows } = await tx.query<{ id: string; status: string; file_sha256: string; options: { applying?: { runId: string; startedAt: string } }; is_demo: boolean }>(
+      "SELECT b.id, b.status, b.file_sha256, b.options, o.is_demo FROM import_batches b JOIN organizations o ON o.id = b.org_id WHERE b.id = $1 AND b.org_id = $2 FOR UPDATE OF b",
       [batchId, actor.orgId],
     );
     const batch = rows[0];
     if (!batch) throw notFound("lô nhập");
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 7340))", [`${actor.orgId}|${batch.file_sha256}`]);
     if (batch.status === "discarded") throw conflict("batch_discarded", "Lô này đã bị huỷ.");
+    const running = batch.options?.applying;
+    if (running && Date.now() - new Date(running.startedAt).getTime() < APPLY_STALE_MS) {
+      throw conflict("batch_applying", "Lô này đang được áp dụng ở một yêu cầu khác. Đợi xong rồi tải lại trang.", { startedAt: running.startedAt });
+    }
     const other = await tx.query<{ id: string }>(
       "SELECT id FROM import_batches WHERE org_id = $1 AND file_sha256 = $2 AND status = 'applied' AND id <> $3 LIMIT 1",
       [actor.orgId, batch.file_sha256, batchId],
     );
     if (other.rows[0]) throw conflict("file_already_applied", "File này (cùng nội dung) đã được áp dụng ở lô khác.", { batchId: other.rows[0].id });
-    if (batch.status === "applied") {
-      const left = await tx.query("SELECT 1 FROM import_rows WHERE batch_id = $1 AND disposition = 'ready' LIMIT 1", [batchId]);
-      if (!left.rows.length) throw conflict("batch_already_applied", "Lô này đã được áp dụng.");
-    } else {
+    const left = await tx.query("SELECT 1 FROM import_rows WHERE batch_id = $1 AND disposition = 'ready' LIMIT 1", [batchId]);
+    if (!left.rows.length) {
+      if (batch.status === "applied") throw conflict("batch_already_applied", "Lô này đã được áp dụng.");
+      // Không khoá sha256 của file khi chẳng có gì để nhập.
+      throw conflict("no_ready_rows", "Lô không có dòng hợp lệ nào để áp dụng.");
+    }
+    if (batch.status !== "applied") {
       await tx.query("UPDATE import_batches SET status = 'applied', applied_by = $2, applied_at = now() WHERE id = $1", [batchId, actor.userId]);
     }
-    await writeAudit(tx, auditActorOf(actor), "import.apply_started", "import_batch", batchId, { skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
+    await tx.query("UPDATE import_batches SET options = options || jsonb_build_object('applying', jsonb_build_object('runId', $2::text, 'startedAt', now())) WHERE id = $1", [
+      batchId,
+      runId,
+    ]);
+    await writeAudit(tx, auditActorOf(actor), "import.apply_started", "import_batch", batchId, { runId, skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
+    return batch.is_demo;
   });
+  try {
+    return await runApply(actor, batchId, opts, isDemo, runId);
+  } finally {
+    await query("UPDATE import_batches SET options = options - 'applying' WHERE id = $1 AND options->'applying'->>'runId' = $2", [batchId, runId]);
+  }
+}
+
+async function runApply(actor: Actor, batchId: string, opts: ApplyOptions, isDemo: boolean, runId: string): Promise<ApplyResult> {
 
   // Tác nhân nhập: chỉ quyền cần để ghi booking; vẫn gắn người bấm áp dụng để truy vết.
   const importer: Actor = { ...systemActor(actor.orgId, "import", ["booking.create", "revenue.view"], actor.timezone), userId: actor.userId, ip: actor.ip };
@@ -282,23 +324,25 @@ export async function applyImport(actor: Actor, batchId: string, opts: ApplyOpti
   for (const row of readyRows) {
     if (opts.skipCheckOutBefore && row.parsed.checkOut && row.parsed.checkOut < opts.skipCheckOutBefore) {
       const issues = [...row.issues, issue("past_stay_skipped", `Ngày trả phòng trước ${opts.skipCheckOutBefore} — không nhập ở lần áp dụng này.`)];
-      await query("UPDATE import_rows SET disposition = 'skipped', issues = $2 WHERE id = $1 AND disposition = 'ready'", [row.id, JSON.stringify(issues)]);
-      result.skipped += 1;
+      const upd = await query("UPDATE import_rows SET disposition = 'skipped', issues = $2 WHERE id = $1 AND disposition = 'ready' RETURNING id", [row.id, JSON.stringify(issues)]);
+      if (upd.length) result.skipped += 1;
       continue;
     }
-    const outcome = await applyRow(importer, batchId, row, today);
+    const outcome = await applyRow(importer, batchId, row, today, isDemo);
+    if (outcome.disposition === "not_ready") continue;
     if (outcome.disposition === "error") {
-      await query("UPDATE import_rows SET disposition = 'error', issues = $2 WHERE id = $1", [row.id, JSON.stringify([...row.issues, outcome.error])]);
-      result.errors += 1;
+      // Giao dịch của dòng đã huỷ ⇒ ghi lỗi riêng, vẫn chỉ khi dòng còn 'ready'.
+      const upd = await query("UPDATE import_rows SET disposition = 'error', issues = $2 WHERE id = $1 AND disposition = 'ready' RETURNING id", [row.id, JSON.stringify([...row.issues, outcome.error])]);
+      if (upd.length) result.errors += 1;
+    } else if (outcome.disposition === "applied") {
+      result.applied += 1;
     } else {
-      await query("UPDATE import_rows SET disposition = $2, booking_id = $3 WHERE id = $1", [row.id, outcome.disposition, outcome.bookingId]);
-      if (outcome.disposition === "applied") result.applied += 1;
-      else result.alreadyImported += 1;
+      result.alreadyImported += 1;
     }
   }
 
   const stats = await recomputeStats(actor.orgId, batchId, { ...result, finishedAt: new Date().toISOString(), skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
-  await writeAudit(null, auditActorOf(actor), "import.apply_finished", "import_batch", batchId, result);
+  await writeAudit(null, auditActorOf(actor), "import.apply_finished", "import_batch", batchId, { runId, ...result });
   return { batchId, ...result, stats };
 }
 
@@ -317,11 +361,13 @@ async function recomputeStats(orgId: string, batchId: string, applyInfo: Record<
 
 /** Huỷ một lô chưa áp dụng (không xoá dòng — giữ dấu vết). */
 export async function discardImport(actor: Actor, batchId: string) {
-  assertCan(actor, "import.preview");
+  assertCan(actor, "import.apply");
+  assertBatchId(batchId);
   const row = await queryOne<{ status: string }>("SELECT status FROM import_batches WHERE id = $1 AND org_id = $2", [batchId, actor.orgId]);
   if (!row) throw notFound("lô nhập");
   if (row.status !== "previewed") throw conflict("batch_not_previewed", "Chỉ huỷ được lô chưa áp dụng.");
-  await query("UPDATE import_batches SET status = 'discarded' WHERE id = $1 AND org_id = $2 AND status = 'previewed'", [batchId, actor.orgId]);
+  const changed = await query("UPDATE import_batches SET status = 'discarded' WHERE id = $1 AND org_id = $2 AND status = 'previewed' RETURNING id", [batchId, actor.orgId]);
+  if (!changed.length) throw conflict("batch_not_previewed", "Lô vừa được áp dụng ở yêu cầu khác — không huỷ được.");
   await writeAudit(null, auditActorOf(actor), "import.discard", "import_batch", batchId, {});
   return { id: batchId, status: "discarded" };
 }

@@ -21,7 +21,8 @@ function clientIp(req: NextRequest) {
 
 function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
-  if (!origin) return req.headers.get("sec-fetch-site") !== "cross-site";
+  // Không có Origin thì phải có Sec-Fetch-Site cùng nguồn — thiếu cả hai coi như không tin được.
+  if (!origin) return ["same-origin", "none"].includes(req.headers.get("sec-fetch-site") ?? "");
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   try {
     return new URL(origin).host === host;
@@ -60,6 +61,10 @@ export function api<P = Record<string, string>>(
       const actor = await actorFromToken(req.cookies.get(SESSION_COOKIE)?.value, clientIp(req));
       if (!actor) return jsonError(401, "unauthenticated", "Phiên đăng nhập đã hết. Đăng nhập lại.");
       const params = (await ctx.params) as P;
+      // Tham số đường dẫn tên "id" hoặc "...Id" phải là UUID — sai dạng thì 404, không để SQL báo lỗi.
+      for (const [key, value] of Object.entries((params ?? {}) as Record<string, unknown>)) {
+        if ((key === "id" || key.endsWith("Id")) && !isUuid(value)) return jsonError(404, "not_found", "Không tìm thấy bản ghi.");
+      }
       const result = await handler(req, actor, params);
       if (result instanceof Response) return result;
       return NextResponse.json(result ?? { ok: true });
@@ -77,6 +82,18 @@ export async function readJson(req: NextRequest): Promise<unknown> {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
+}
+
+/** Id trong đường dẫn không đúng dạng thì trả 404 ngay, không chạy câu SQL sẽ lỗi. */
+export function assertUuid(value: unknown, what = "bản ghi"): string {
+  if (!isUuid(value)) throw new AppError("not_found", `Không tìm thấy ${what}.`, 404);
+  return value;
+}
+
 export interface PageParams {
   page: number;
   pageSize: number;
@@ -84,7 +101,8 @@ export interface PageParams {
 }
 
 export function pageParams(url: URL, defaults = { pageSize: 50, max: 200 }): PageParams {
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+  const rawPage = Number(url.searchParams.get("page") ?? 1);
+  const page = Number.isSafeInteger(rawPage) && rawPage >= 1 && rawPage <= 100_000 ? rawPage : 1;
   const pageSize = Math.min(defaults.max, Math.max(1, Number(url.searchParams.get("pageSize") ?? defaults.pageSize) || defaults.pageSize));
   return { page, pageSize, offset: (page - 1) * pageSize };
 }

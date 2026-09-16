@@ -69,6 +69,7 @@ export function ChangeRequestDecision({ id, summary }: { id: string; summary: st
           <div className="field">
             <label htmlFor={`cr-note-${id}`}>{mode === "reject" ? "Lý do từ chối (bắt buộc)" : "Ghi chú (không bắt buộc)"}</label>
             <textarea id={`cr-note-${id}`} className="textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+            <span className="hint">Không ghi SĐT/email khách vào ghi chú — mọi người xem được booking đều đọc được.</span>
           </div>
           <ErrorText error={error} />
         </div>
@@ -126,6 +127,7 @@ export function ResolveConflictButton({ id, summary }: { id: string; summary: st
           <div className="field">
             <label htmlFor={`resolve-${id}`}>Cách đã xử lý (bắt buộc)</label>
             <textarea id={`resolve-${id}`} className="textarea" value={resolution} onChange={(e) => setResolution(e.target.value)} maxLength={2000} />
+            <span className="hint">Không ghi SĐT/email khách vào ghi chú — mọi người xem được booking đều đọc được.</span>
           </div>
           <ErrorText error={error} />
         </div>

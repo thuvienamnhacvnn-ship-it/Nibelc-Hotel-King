@@ -16,9 +16,9 @@ interface SheetInfo {
 const MAX_MB = 15;
 
 function roleText(sheet: SheetInfo, source: string) {
-  if (sheet.name === source) return "Sheet nguồn — dòng sẽ vào lô";
   if (!sheet.hasBookingHeader) return "Không có bảng booking — bỏ qua";
-  if (sheet.suggestedRole === "cancel") return "Sheet Hủy — mọi dòng vào hàng kiểm tra";
+  if (sheet.suggestedRole === "cancel") return "Sheet Hủy — mọi dòng vào hàng kiểm tra, không chọn làm nguồn";
+  if (sheet.name === source) return "Sheet nguồn — dòng sẽ vào lô";
   return "Sheet nhà — chỉ đối chiếu, không cộng";
 }
 
@@ -44,7 +44,7 @@ export function UploadPanel() {
     const res = await run<{ sheets: SheetInfo[] }>("/api/v1/imports/inspect", { body: form }, { refresh: false });
     if (!res.data) return;
     setSheets(res.data.sheets);
-    const withHeader = res.data.sheets.filter((s) => s.hasBookingHeader);
+    const withHeader = res.data.sheets.filter((s) => s.hasBookingHeader && s.suggestedRole !== "cancel");
     setSource(withHeader.find((s) => s.name.trim().toUpperCase() === "TH")?.name ?? withHeader[0]?.name ?? "TH");
   }
 
@@ -57,7 +57,8 @@ export function UploadPanel() {
     if (res.data) router.push(`/nhap-excel/${res.data.batchId}`);
   }
 
-  const bookingSheets = sheets?.filter((s) => s.hasBookingHeader) ?? [];
+  // Sheet Hủy không được làm sheet nguồn (server cũng từ chối).
+  const bookingSheets = sheets?.filter((s) => s.hasBookingHeader && s.suggestedRole !== "cancel") ?? [];
   const appliedBatch = error?.code === "file_already_applied" ? (error.details as { batchId?: string } | undefined)?.batchId : undefined;
 
   return (

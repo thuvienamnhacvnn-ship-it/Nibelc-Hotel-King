@@ -4,7 +4,8 @@ import { requireActor } from "@/lib/session";
 import { formatInstant } from "@/lib/time";
 import { DEMO_SCENARIO_LABELS, canRunDemoFeed } from "@/modules/connectors/demo-feed";
 import { CONNECTOR_STATUS_LABELS, connectorTone } from "@/modules/connectors/labels";
-import { INBOUND_STATUSES, INBOUND_STATUS_LABELS, canPauseConnector, listConnectors, listInboundEvents } from "@/modules/connectors/queries";
+import { INBOUND_STATUSES, INBOUND_STATUS_LABELS, listConnectors, listInboundEvents } from "@/modules/connectors/queries";
+import { canPauseConnector } from "@/modules/connectors/service";
 import { DemoFeedPanel, PauseButton } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,8 @@ const EVENT_TONES: Record<string, Tone> = {
 
 function formatLatency(ms: number | null) {
   if (ms == null) return null;
-  if (ms < 1000) return `${ms} ms`;
+  if (ms < 1) return "< 1 ms";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1).replace(".", ",")} giây`;
   const m = Math.floor(ms / 60_000);
   if (m < 60) return `${m} phút ${Math.round((ms % 60_000) / 1000)} giây`;
@@ -42,7 +44,8 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
   const actor = await requireActor("connector.view");
   const sp = await searchParams;
   const str = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : null);
-  const page = Math.max(1, Number(str("page")) || 1);
+  const rawPage = Number(str("page"));
+  const page = Number.isSafeInteger(rawPage) && rawPage >= 1 && rawPage <= 100_000 ? rawPage : 1;
   const connectorFilter = str("connector");
   const statusFilter = str("status");
 
@@ -217,7 +220,7 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
                     <td className="small">{e.source_occurred_at ? formatInstant(e.source_occurred_at, actor.timezone) : <span className="faint">Nguồn không gửi</span>}</td>
                     <td className="num small">{formatLatency(e.source_to_received_ms) ?? <span className="faint">—</span>}</td>
                     <td className="num small">
-                      {e.received_to_processed_ms === 0 ? (
+                      {e.same_instant ? (
                         <span className="faint" title="Hai mốc đang được ghi trong cùng một giao dịch nên chưa đo được — xem ghi chú dưới bảng">
                           chưa đo được*
                         </span>
@@ -249,9 +252,9 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
           </div>
         )}
         <div className="card-pad stack" style={{ gap: 6 }}>
-          {events.items.some((e) => e.received_to_processed_ms === 0) ? (
+          {events.items.some((e) => e.same_instant) ? (
             <div className="small muted">
-              * Lõi nhận sự kiện hiện ghi “nhận lúc” và “xử lý xong” trong cùng một giao dịch nên hai mốc trùng nhau; độ trễ nhận → xử lý chưa đo được cho tới khi lõi sửa (đã báo).
+              * Sự kiện nhận trước bản sửa lõi 16/09 ghi “nhận lúc” và “xử lý xong” cùng một mốc nên không đo được độ trễ nhận → xử lý. Sự kiện mới đo bình thường.
             </div>
           ) : null}
           <Pagination page={events.page} pageSize={events.pageSize} total={events.total} hrefFor={eventsHref} />

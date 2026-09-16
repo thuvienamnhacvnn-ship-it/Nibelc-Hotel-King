@@ -14,6 +14,8 @@
  *   9  hai phòng nối bằng "+"                               18 kỳ ở quá khứ (2025), ngày nhận booking dd/mm/yyyy
  *   10 ngày nhận booking là ô Date ngày ≤ 12 (có thể đảo)   19 "Đánh dấu vắng mặt"
  *                                                            20 ghi chú Booking nhưng mã dạng Airbnb
+ *   28 ghi chú vừa có kênh vừa có khoản thu ("Booking 460,86e TM") — hợp lệ, khoản thu được tách
+ * Dòng 3 có mã trùng một dòng ở sheet Hủy ⇒ phải vào hàng kiểm tra.
  *   21 thiếu tên khách + trống căn hộ + thiếu ngày nhận booking   25 ngày ở là ô Date ngày ≤ 12
  *   22 ngày nhận booking không đọc được + số khách không phải số  26 ngày nhận booking sau ngày nhận phòng
  *   23 ngày trả trước ngày nhận                              27 LOẠI PHÒNG "nguyên căn" nhưng là phòng lẻ
@@ -100,6 +102,7 @@ const ROWS: Row[] = [
   { booked: "16/09/26", note: "Booking", unit: "Demo B Phòng 1", ref: 1000000025, ci: cellDate("2027-02-05"), co: vn("2027-02-06"), nights: 1, type: "1 phòng", guests: 2 },
   { booked: "20/02/27", note: "Booking", unit: "Demo B Phòng 1", ref: 1000000026, ci: vn("2027-02-10"), co: vn("2027-02-11"), nights: 1, type: "1 phòng", guests: 2 },
   { booked: "16/09/26", note: "Booking", unit: "Demo A Phòng 2", ref: 1000000027, ci: vn("2027-02-15"), co: vn("2027-02-16"), nights: 1, type: "nguyên căn", guests: 2 },
+  { booked: "16/09/26", note: "Booking 460,86e TM", unit: "Studio Demo C", ref: 1000000028, ci: vn("2027-03-10"), co: vn("2027-03-12"), nights: 2, type: "1 phòng", guests: 2 },
 ];
 
 function values(n: number, r: Row): Cell[] {
@@ -132,7 +135,7 @@ async function main() {
   // Sheet Hủy: tiêu đề ở dòng 1
   const cancel = wb.addWorksheet("Hủy");
   cancel.getRow(1).values = HEADERS.slice(0, 13);
-  cancel.getRow(2).values = values(1, { ...ROWS[0], checkin: "Đánh dấu vắng mặt", status: "đã hoàn tất" }).slice(0, 13);
+  cancel.getRow(2).values = values(3, { ...ROWS[2], checkin: "Đánh dấu vắng mặt", status: "đã hoàn tất" }).slice(0, 13);
   cancel.getRow(3).values = values(22, { booked: "16/09/26", note: "Airbnb", unit: "Demo B Phòng 1", ref: "HMDEMO0077", ci: vn("2026-10-15"), co: vn("2026-10-16"), nights: 1, type: "1 phòng", guests: 1, checkin: "khách hủy" }).slice(0, 13);
 
   const ds = wb.addWorksheet("DS Phòng");

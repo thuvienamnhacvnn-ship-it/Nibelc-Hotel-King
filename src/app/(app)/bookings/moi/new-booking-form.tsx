@@ -279,6 +279,7 @@ export function NewBookingForm({ units, showMoney, today }: { units: UnitLite[];
         <div className="field">
           <label htmlFor="nb-onote">Ghi chú vận hành</label>
           <textarea id="nb-onote" className="textarea" value={v.opsNote} onChange={set("opsNote")} maxLength={2000} />
+          <span className="hint">Không ghi SĐT/email khách vào ghi chú — mọi người xem được booking đều đọc được. Liên hệ khách nhập ở ô SĐT/Email phía trên.</span>
         </div>
       </div>
 

@@ -56,20 +56,31 @@ export interface RowFilter {
   sheet?: string | null;
 }
 
-/** Ẩn tên/SĐT khách ở cả giá trị gốc lẫn giá trị đã hiểu khi thiếu quyền xem liên hệ khách. */
+/**
+ * Ẩn ở server: tên/SĐT khách khi thiếu booking.view_guest_contact; ghi chú có khoản thu khi thiếu revenue.view
+ * (cả giá trị gốc lẫn giá trị đã hiểu).
+ */
 export function redactRow(actor: Actor, row: ImportRowItem): ImportRowItem {
-  if (can(actor, "booking.view_guest_contact")) return row;
+  const hideContact = !can(actor, "booking.view_guest_contact");
+  const hideMoney = !can(actor, "revenue.view") && !!row.parsed?.paymentNote;
+  if (!hideContact && !hideMoney) return row;
   const columns = Object.fromEntries(
     Object.entries(row.raw?.columns ?? {}).map(([header, value]) => {
       const field = fieldOfHeader(header);
-      return [header, field && GUEST_CONTACT_FIELDS.includes(field) && value != null ? "[ẩn]" : value];
+      if (value == null) return [header, value];
+      if (hideContact && field && GUEST_CONTACT_FIELDS.includes(field)) return [header, "[ẩn]"];
+      if (hideMoney && field === "note") return [header, "[ẩn khoản thu]"];
+      return [header, value];
     }),
   );
-  return {
-    ...row,
-    raw: { ...row.raw, columns },
-    parsed: row.parsed ? { ...row.parsed, guestName: row.parsed.guestName ? "[ẩn]" : null, guestPhone: row.parsed.guestPhone ? "[ẩn]" : null } : null,
-  };
+  const parsed = row.parsed
+    ? {
+        ...row.parsed,
+        ...(hideContact ? { guestName: row.parsed.guestName ? "[ẩn]" : null, guestPhone: row.parsed.guestPhone ? "[ẩn]" : null } : {}),
+        ...(hideMoney ? { paymentNote: "[ẩn khoản thu]", note: "[ẩn khoản thu]" } : {}),
+      }
+    : null;
+  return { ...row, raw: { ...row.raw, columns }, parsed };
 }
 
 export async function listImportRows(actor: Actor, batchId: string, filter: RowFilter, page: { page: number; pageSize: number; offset: number }) {
@@ -80,7 +91,7 @@ export async function listImportRows(actor: Actor, batchId: string, filter: RowF
     params.push(filter.disposition);
     where.push(`r.disposition = $${params.length}`);
   }
-  if (filter.issue && filter.issue in ISSUE_DEFS) {
+  if (filter.issue && Object.hasOwn(ISSUE_DEFS, filter.issue)) {
     params.push(JSON.stringify([{ code: filter.issue }]));
     where.push(`r.issues @> $${params.length}::jsonb`);
   }

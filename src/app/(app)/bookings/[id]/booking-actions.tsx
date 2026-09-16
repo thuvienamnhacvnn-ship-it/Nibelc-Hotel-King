@@ -222,6 +222,7 @@ export function EditDetailsForm({ booking, showGuest, showMoney }: { booking: Ed
           <Field label="Ghi chú vận hành" id="ed-onote">
             <textarea id="ed-onote" className="textarea" value={v.opsNote} onChange={set("opsNote")} maxLength={2000} />
           </Field>
+          <div className="hint">Không ghi SĐT/email khách vào ghi chú — mọi người xem được booking đều đọc được.</div>
           <ErrorText error={error} />
         </div>
       </Dialog>
@@ -516,6 +517,7 @@ export function CreateChangeRequestForm(props: {
 
           <Field label="Ghi chú (nguồn yêu cầu, nội dung khách nhắn…)" id="cr-note">
             <textarea id="cr-note" className="textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+            <span className="hint">Không ghi SĐT/email khách vào ghi chú — mọi người xem được booking đều đọc được.</span>
           </Field>
 
           {props.canApprove ? (
