@@ -72,6 +72,11 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
       <PageHeader
         title="Kết nối kênh"
         description="Trạng thái từng connector, nhật ký sự kiện nhận và độ trễ đồng bộ. Độ trễ đo riêng hai mốc: từ lúc nguồn phát sinh đến lúc hệ thống nhận, và từ lúc nhận đến lúc xử lý xong."
+        actions={
+          <a className="btn" href="/ket-noi/ical">
+            Đối chiếu lịch iCal
+          </a>
+        }
       />
       {liveCount === 0 ? (
         <Notice tone="warn" title="Chưa có kênh thật nào được kết nối">

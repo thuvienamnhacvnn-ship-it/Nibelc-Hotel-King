@@ -17,7 +17,7 @@ const coreHandlers: Record<string, OutboxHandler> = {
   },
 };
 
-export const JOB_MODULES = ["inbox", "qa", "photos", "manager"] as const;
+export const JOB_MODULES = ["inbox", "qa", "photos", "manager", "icalsync"] as const;
 
 async function loadModuleJobs() {
   const handlers: Record<string, OutboxHandler> = {};
