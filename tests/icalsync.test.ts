@@ -83,3 +83,20 @@ describe("iCal chỉ đọc", () => {
     expect(row!.last_error).toContain("503");
   });
 });
+
+describe("iCal — chống gọi địa chỉ lạ", () => {
+  it("từ chối host giả dạng, có tài khoản/cổng", () => {
+    for (const bad of [
+      "https://airbnb.com.evil.test/cal.ics",
+      "https://evilbooking.com/cal.ics",
+      "https://booking.com@127.0.0.1/cal.ics",
+      "https://www.airbnb.com:8443/cal.ics",
+      "https://127.0.0.1/booking.com",
+    ]) {
+      expect(() => validateIcalUrl(bad), bad).toThrow();
+    }
+    for (const good of ["https://www.airbnb.com/calendar/ical/1.ics?s=a", "https://www.airbnb.hu/calendar/ical/1.ics?s=a", "https://admin.booking.com/hotel/hoteladmin/ical.html?t=b"]) {
+      expect(validateIcalUrl(good)).toBeTruthy();
+    }
+  });
+});

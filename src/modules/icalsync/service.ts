@@ -9,7 +9,8 @@ import { maskUrl, nightsOf, parseIcal, toRanges } from "./parse";
  * Connector iCal chỉ đọc. Không tạo/sửa booking từ iCal (không đủ dữ liệu) — chỉ ghi phát hiện lệch lịch.
  * Link chỉ được lấy từ tên miền của kênh (chống dùng hệ thống gọi địa chỉ nội bộ).
  */
-const ALLOWED_HOSTS = [/(^|\.)airbnb\.[a-z.]+$/i, /(^|\.)booking\.com$/i];
+// Chỉ tên miền thật của kênh: airbnb.<đuôi quốc gia> (không cho airbnb.com.evil.test) và *.booking.com
+const ALLOWED_HOSTS = [/^(www\.)?airbnb\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/i, /^([a-z0-9-]+\.)*booking\.com$/i];
 const WINDOW_DAYS = 365;
 const MAX_BYTES = 2 * 1024 * 1024;
 /** Booking mới tạo cần thời gian để kênh kia nhập lịch — trong khoảng này chưa báo "kênh còn trống". */
@@ -17,11 +18,22 @@ const GRACE_HOURS = 4;
 
 export type Fetcher = (url: string) => Promise<{ ok: boolean; status: number; text: string }>;
 
+/** Không tự đi theo chuyển hướng: mỗi bước chuyển hướng phải lại là https của Airbnb/Booking.com (chống bị dẫn tới địa chỉ nội bộ). */
 export const defaultFetcher: Fetcher = async (url) => {
-  const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(20_000), headers: { "user-agent": "VD-Hotel-ical/1.0" } });
-  const buf = await res.arrayBuffer();
-  if (buf.byteLength > MAX_BYTES) throw new Error("Tệp iCal quá lớn");
-  return { ok: res.ok, status: res.status, text: new TextDecoder().decode(buf) };
+  let current = url;
+  for (let hop = 0; hop < 4; hop++) {
+    const res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(20_000), headers: { "user-agent": "VD-Hotel-ical/1.0" } });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      if (!location) throw new Error(`Kênh chuyển hướng không có địa chỉ (mã ${res.status})`);
+      current = validateIcalUrl(new URL(location, current).toString());
+      continue;
+    }
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > MAX_BYTES) throw new Error("Tệp iCal quá lớn");
+    return { ok: res.ok, status: res.status, text: new TextDecoder().decode(buf) };
+  }
+  throw new Error("Kênh chuyển hướng quá nhiều lần");
 };
 
 export function validateIcalUrl(raw: string): string {
@@ -32,6 +44,7 @@ export function validateIcalUrl(raw: string): string {
     throw invalid("Link iCal không hợp lệ.");
   }
   if (u.protocol !== "https:") throw invalid("Link iCal phải là https.");
+  if (u.username || u.password || u.port) throw invalid("Link iCal không được có tài khoản hay cổng riêng.");
   if (!ALLOWED_HOSTS.some((re) => re.test(u.hostname))) throw invalid("Chỉ nhận link xuất lịch của Airbnb hoặc Booking.com.");
   return u.toString();
 }
