@@ -90,14 +90,28 @@ describe("Kho Q&A — vòng đời và phiên bản", () => {
     const rejected = await rejectQaEntry(f.actors.bp_coordinator, draft.id, { reason: "Thiếu giờ nhận muộn" });
     expect(rejected.status).toBe("draft");
 
-    // Người khác sửa nội dung ⇒ thành người soạn, không tự duyệt được nữa; người tạo ban đầu duyệt được.
+    // Người khác sửa nội dung: created_by giữ nguyên người tạo gốc; cả người tạo gốc lẫn người sửa gần nhất đều không tự duyệt.
     const edited = await updateQaDraft(f.actors.bp_coordinator, draft.id, { expectedUpdatedAt: new Date(rejected.updated_at).toISOString(), content: content({ answerEn: "Check-in 15:00–23:00." }) });
+    expect(edited.created_by).toBe(f.actors.vn_manager.userId);
     await expectCode(updateQaDraft(f.actors.vn_staff, draft.id, { expectedUpdatedAt: new Date(rejected.updated_at).toISOString(), content: content() }), "stale_version");
     await submitQaForReview(f.actors.bp_coordinator, edited.id);
     await expectCode(approveQaEntry(f.actors.bp_coordinator, draft.id), "self_approval");
-    const ok = await approveQaEntry(f.actors.vn_manager, draft.id);
+    await expectCode(approveQaEntry(f.actors.vn_manager, draft.id), "self_approval");
+    const ok = await approveQaEntry(f.actors.admin, draft.id);
     expect(ok.status).toBe("approved");
-    expect(ok.approved_by).toBe(f.actors.vn_manager.userId);
+    expect(ok.approved_by).toBe(f.actors.admin.userId);
+  });
+
+  it("lưu lại nội dung y hệt cũng không mở đường cho người tạo gốc tự duyệt (lỗi N1 của QA)", async () => {
+    const f = await makeFixture();
+    const draft = await createQaDraft(f.actors.vn_manager, content());
+    // vn_staff bấm "Lưu" không đổi gì
+    await updateQaDraft(f.actors.vn_staff, draft.id, { content: content() });
+    await submitQaForReview(f.actors.vn_staff, draft.id);
+    await expectCode(approveQaEntry(f.actors.vn_manager, draft.id), "self_approval");
+    // vn_staff không có quyền duyệt; bp_coordinator chưa tạo cũng chưa sửa ⇒ duyệt được.
+    await expectCode(approveQaEntry(f.actors.vn_staff, draft.id), "forbidden");
+    expect((await approveQaEntry(f.actors.bp_coordinator, draft.id)).status).toBe("approved");
   });
 
   it("chặn lưu mã cửa/mật khẩu (422) nhưng cho câu nói mật khẩu dán trong phòng", async () => {
@@ -111,6 +125,7 @@ describe("Kho Q&A — vòng đời và phiên bản", () => {
     const ok = await createQaDraft(f.actors.vn_staff, content({ topic: "wifi", question: "Is there Wi-Fi?", answerEn: "Yes. The Wi-Fi password is posted inside the room." }));
     expect(ok.status).toBe("draft");
     expect(looksLikeSecret("Check-in 15:00–23:00, check-out 10:00")).toBe(false);
+    await expectCode(createQaDraft(f.actors.vn_staff, content({ answerEn: "Ajtókód: 4711" })), "secret_content");
     const rows = await query("SELECT 1 FROM qa_entries WHERE org_id = $1 AND answer_en ILIKE '%4821%'", [f.orgId]);
     expect(rows).toHaveLength(0);
   });
@@ -131,6 +146,68 @@ describe("Kho Q&A — vòng đời và phiên bản", () => {
     const retired = await retireQaEntry(f.actors.vn_manager, a.id, { reason: "Đổi giờ nhận phòng" });
     expect(retired.status).toBe("retired");
     expect(await ask(f, "what time is check in")).toBeNull();
+  });
+});
+
+describe("Kho Q&A — bộ lọc mã cửa/mật khẩu (C1 của QA)", () => {
+  const SECRETS = [
+    "Door code: 4711",
+    "Mã cửa là 4711",
+    "jelszó: alma1234",
+    "Ajtókód: 4711",
+    "ajtókód 4711",
+    "Kapukód 1234",
+    "A kapu kódja 4711",
+    "Türcode 4711",
+    "WLAN-Schlüssel: Sommer2024",
+    "Mật khẩu wifi là hanoi2024",
+    "WiFi password for guests is Sommer2024",
+    "wifi pw Sommer2024",
+    "WiFi: VDHotel / Sommer2024",
+    "Key box number 4521",
+    "keybox 4521",
+    "lockbox combination 4521",
+    "PIN of the keybox: 0815",
+    "Code for the building door is 4711",
+    "Door: 4711",
+    "Mã cổng 4711",
+    "mã két 4711",
+    "The door code is four seven one one",
+    "mã cửa: bốn bảy một một",
+    "Die Türcode ist vier sieben eins eins",
+    "Az ajtókód négy hét egy egy",
+    "code４７１１",
+    "Door code: ４７１１",
+    "c o d e: 4711",
+    "p.i.n 4711",
+    "door code 4 7 1 1",
+    "The PIN is 1234#",
+    "Passcode 9911",
+    "passcode=abcd",
+    "mật khẩu: hoaanhdao",
+    "password: sunflower",
+  ];
+  const SAFE = [
+    "Check-in from 15:00",
+    "Room 5 is on floor 2",
+    "Check-in is from 15:00 to 23:00 (Budapest time).",
+    "Late check-out until 13:00 at the latest may be possible, depending on availability.",
+    "Yes, Wi-Fi is available. The network name and password are posted inside the room.",
+    "Wifi password is posted inside the room",
+    "password: see card in room",
+    "Door code will be sent before arrival via the access tool",
+    "Access details are only shared through our secure access process after your booking is verified.",
+    "Mã cửa là gì?",
+    "Nhận phòng từ 15:00 đến 23:00 (giờ Budapest).",
+    "Wi-Fi speed is 500 Mbit",
+    "The apartment is on the 3rd floor, door 12.",
+    "Parking costs 4500 HUF per day",
+  ];
+  it.each(SECRETS)("chặn: %s", (text) => {
+    expect(looksLikeSecret(text)).toBe(true);
+  });
+  it.each(SAFE)("không chặn: %s", (text) => {
+    expect(looksLikeSecret(text)).toBe(false);
   });
 });
 

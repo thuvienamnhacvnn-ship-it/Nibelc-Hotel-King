@@ -127,6 +127,17 @@ async function resolveScope(tx: pg.PoolClient, actor: Actor, content: QaContentI
   return { propertyId: rows[0].property_id, unitId: rows[0].id };
 }
 
+/** Người sửa nội dung gần nhất của một phiên bản (null nếu chưa ai sửa sau khi tạo). Không cần cột mới — đọc nhật ký. */
+export async function lastContentEditor(client: Pick<pg.PoolClient, "query">, orgId: string, entryId: string): Promise<string | null> {
+  const { rows } = await client.query<{ actor_id: string | null }>(
+    `SELECT actor_id FROM audit_log
+      WHERE org_id = $1 AND entity_type = 'qa_entry' AND entity_id = $2 AND action = 'qa.update'
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [orgId, entryId],
+  );
+  return rows[0]?.actor_id ?? null;
+}
+
 async function lockEntry(tx: pg.PoolClient, actor: Actor, id: string) {
   assertId(id);
   const { rows } = await tx.query<QaEntryRow>("SELECT * FROM qa_entries WHERE id = $1 AND org_id = $2 FOR UPDATE", [id, actor.orgId]);
@@ -203,11 +214,9 @@ export async function updateQaDraft(actor: Actor, id: string, raw: unknown) {
     const scope = await resolveScope(tx, actor, c);
     const { rows } = await tx.query<QaEntryRow>(
       `UPDATE qa_entries SET scope = $3, property_id = $4, unit_id = $5, topic = $6, question = $7, variants = $8, answer_en = $9, answer_vi = $10,
-              sensitivity = $11, handoff_condition = $12, source = $13, valid_from = $14, valid_to = $15, status = 'draft',
-              -- Người viết nội dung gần nhất coi là người soạn: người đó không được tự duyệt bản này.
-              created_by = coalesce($16, created_by), updated_at = now()
+              sensitivity = $11, handoff_condition = $12, source = $13, valid_from = $14, valid_to = $15, status = 'draft', updated_at = now()
         WHERE id = $1 AND org_id = $2 RETURNING *`,
-      [id, actor.orgId, c.scope, scope.propertyId, scope.unitId, c.topic, c.question, c.variants, c.answerEn, c.answerVi, c.sensitivity, c.handoffCondition, c.source, c.validFrom, c.validTo, actor.userId],
+      [id, actor.orgId, c.scope, scope.propertyId, scope.unitId, c.topic, c.question, c.variants, c.answerEn, c.answerVi, c.sensitivity, c.handoffCondition, c.source, c.validFrom, c.validTo],
     );
     await writeAudit(tx, auditActorOf(actor), "qa.update", "qa_entry", id, { entryKey: row.entry_key, version: row.version, fromStatus: row.status, before: contentSnapshot(row), after: contentSnapshot(rows[0]) });
     return rows[0];
@@ -263,7 +272,11 @@ export async function approveQaEntry(actor: Actor, id: string, raw: unknown = {}
     const row = await lockEntry(tx, actor, id);
     assertFresh(row.updated_at, input.expectedUpdatedAt);
     if (row.status !== "pending_review") throw conflict("qa_bad_status", "Chỉ duyệt được bản đang chờ duyệt.");
-    if (row.created_by && row.created_by === actor.userId) throw new AppError("self_approval", "Người tạo không tự duyệt câu trả lời của mình — nhờ người khác có quyền duyệt.", 403);
+    // Không tự duyệt: người tạo phiên bản (created_by giữ nguyên) VÀ người sửa nội dung gần nhất (lấy từ nhật ký qa.update).
+    const lastEditor = await lastContentEditor(tx, actor.orgId, id);
+    if ((row.created_by && row.created_by === actor.userId) || lastEditor === actor.userId) {
+      throw new AppError("self_approval", "Người tạo hoặc người sửa nội dung gần nhất không tự duyệt — nhờ người khác có quyền duyệt.", 403);
+    }
     // Kiểm lại lúc duyệt: nội dung có thể được ghi trước khi bộ lọc bí mật được siết.
     assertNoSecrets({ question: row.question, variants: row.variants, answerEn: row.answer_en, answerVi: row.answer_vi, handoffCondition: row.handoff_condition, source: row.source });
 

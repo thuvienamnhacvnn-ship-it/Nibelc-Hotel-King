@@ -51,6 +51,7 @@ export type QaListItem = QaEntryRow & {
   approved_by_name: string | null;
   version_count: number;
   last_reject_reason: string | null;
+  last_editor_id?: string | null;
 };
 
 export async function listQaEntries(actor: Actor, f: QaFilters, page: PageParams) {
@@ -80,7 +81,10 @@ export async function listQaEntries(actor: Actor, f: QaFilters, page: PageParams
             (SELECT count(*)::int FROM qa_entries v WHERE v.org_id = e.org_id AND v.entry_key = e.entry_key) AS version_count,
             (SELECT a.detail->>'reason' FROM audit_log a
               WHERE a.org_id = e.org_id AND a.entity_type = 'qa_entry' AND a.entity_id = e.id::text AND a.action = 'qa.reject'
-              ORDER BY a.created_at DESC LIMIT 1) AS last_reject_reason
+              ORDER BY a.created_at DESC LIMIT 1) AS last_reject_reason,
+            (SELECT a.actor_id FROM audit_log a
+              WHERE a.org_id = e.org_id AND a.entity_type = 'qa_entry' AND a.entity_id = e.id::text AND a.action = 'qa.update'
+              ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS last_editor_id
        FROM qa_entries e
        LEFT JOIN properties p ON p.id = e.property_id AND p.org_id = e.org_id
        LEFT JOIN units u ON u.id = e.unit_id AND u.org_id = e.org_id

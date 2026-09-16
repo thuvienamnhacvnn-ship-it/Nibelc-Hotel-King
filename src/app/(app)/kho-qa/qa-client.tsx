@@ -38,6 +38,7 @@ export interface QaEntry {
   valid_from: string | null;
   valid_to: string | null;
   created_by: string | null;
+  last_editor_id?: string | null;
   created_by_name: string | null;
   approved_by_name: string | null;
   approved_at: string | null;
@@ -316,7 +317,8 @@ export function EntryActions({
     const res = await action.run(`/api/v1/qa/${entry.id}/${path}`, { body: { expectedUpdatedAt: entry.updated_at, ...body } });
     if (!res.error) close();
   };
-  const own = !!currentUserId && entry.created_by === currentUserId;
+  // Khớp luật ở service: người tạo và người sửa nội dung gần nhất không tự duyệt.
+  const own = !!currentUserId && (entry.created_by === currentUserId || entry.last_editor_id === currentUserId);
 
   return (
     <div className={s.actions}>
@@ -332,7 +334,7 @@ export function EntryActions({
       ) : null}
       {canApprove && entry.status === "pending_review" ? (
         own ? (
-          <span className="small faint" title="Người soạn không tự duyệt">
+          <span className="small faint" title="Người tạo / người sửa gần nhất không tự duyệt">
             Chờ người khác duyệt
           </span>
         ) : (
