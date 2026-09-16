@@ -106,6 +106,17 @@ describe("Trợ lý 2 — lập và điều chỉnh việc dọn", () => {
     expect(readiness.get(f.units.whole)).toBe("unknown");
   });
 
+  it("booking đã trả phòng trong quá khứ (nhập lịch sử) không sinh việc dọn quá hạn", async () => {
+    const f = await makeFixture();
+    const { addDays, todayOps } = await import("@/lib/time");
+    const today = todayOps();
+    await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, addDays(today, -10), addDays(today, -7)));
+    await createBooking(f.actors.vn_staff, bookingInput(f.units.r2, addDays(today, -2), today));
+    await runWorker();
+    const tasks = await tasksFor(f.orgId);
+    expect(tasks.map((t) => t.service_date)).toEqual([today]);
+  });
+
   it("đóng sự cố không chặn không làm phòng mất trạng thái sẵn sàng", async () => {
     const f = await makeFixture();
     const b = await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, "2026-10-01", "2026-10-03"));

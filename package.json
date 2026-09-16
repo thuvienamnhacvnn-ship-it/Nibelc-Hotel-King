@@ -12,6 +12,8 @@
     "db:seed": "tsx scripts/seed-demo.ts",
     "worker": "tsx src/worker/main.ts",
     "import:excel": "tsx scripts/import-excel.ts",
+    "import:catalog": "tsx scripts/import-catalog-docx.ts",
+    "demo:excel": "tsx scripts/make-demo-excel.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -20,6 +22,7 @@
   },
   "dependencies": {
     "exceljs": "4.4.0",
+    "jszip": "3.10.2",
     "lucide-react": "1.46.0",
     "next": "16.2.12",
     "pg": "8.23.0",

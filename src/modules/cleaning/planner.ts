@@ -1,5 +1,5 @@
 import type { Queryable } from "@/lib/db";
-import { addDays, hhmm, localToUtc } from "@/lib/time";
+import { addDays, hhmm, localToUtc, todayOps } from "@/lib/time";
 import { emit } from "@/modules/outbox/outbox";
 
 /**
@@ -107,6 +107,8 @@ export async function planCleaningForUnits(tx: Queryable, orgId: string, unitIds
 
     if (!task) {
       if (!desired) continue;
+      // Lượt trả phòng đã qua (nhập lịch sử, sửa booking cũ) không sinh việc dọn mới — nếu không sẽ đầy việc quá hạn giả.
+      if (c.end_date < todayOps(c.timezone)) continue;
       await createTask(tx, orgId, c, desired);
       stats.created += 1;
       continue;

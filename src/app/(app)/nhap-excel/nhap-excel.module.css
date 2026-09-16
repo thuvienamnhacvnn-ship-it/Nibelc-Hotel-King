@@ -1,0 +1,44 @@
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.rows td {
+  vertical-align: top;
+}
+
+.raw {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  min-width: 220px;
+}
+
+.raw > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 40%) 1fr;
+  gap: 6px;
+}
+
+.raw dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.raw dd {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.issues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
