@@ -10,7 +10,6 @@
     "db:dev": "tsx scripts/dev-postgres.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed-demo.ts",
-    "db:reset": "tsx scripts/reset-demo.ts",
     "worker": "tsx src/worker/main.ts",
     "import:excel": "tsx scripts/import-excel.ts",
     "typecheck": "tsc --noEmit",
