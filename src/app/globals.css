@@ -2495,3 +2495,118 @@ details.fold[open] > :not(summary) {
     min-height: 36dvh;
   }
 }
+
+/* ═════ Đăng nhập có ảnh banner (Budapest về đêm) ═════ */
+.login-brand-tag {
+  display: none;
+}
+.login-bg {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0 !important;
+  background: var(--login-banner-desktop, var(--login-banner-mobile)) center / cover no-repeat;
+  animation: login-zoom 2.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: 30% 70%;
+}
+@keyframes login-zoom {
+  from {
+    transform: scale(1.08);
+    filter: saturate(0.85) brightness(0.85);
+  }
+}
+.login[data-banner="true"] .login-hero {
+  background: #0b1f3a;
+}
+.login[data-banner="true"] .login-hero::before {
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(8, 20, 38, 0.55) 0%, rgba(8, 20, 38, 0) 26%, rgba(8, 20, 38, 0) 72%, rgba(8, 20, 38, 0.45) 100%);
+}
+.login[data-banner="true"] .login-hero > :not(.login-bg) {
+  z-index: 2;
+}
+
+/* Máy tính: ảnh phủ toàn màn hình, khung đăng nhập kính mờ bên phải */
+@media (min-width: 901px) {
+  .login[data-banner="true"] {
+    display: block;
+    position: relative;
+    overflow: hidden;
+  }
+  .login[data-banner="true"] .login-hero {
+    position: absolute;
+    inset: 0;
+    padding: 36px 48px;
+  }
+  .login[data-banner="true"] .login-hero::before {
+    background:
+      linear-gradient(180deg, rgba(8, 20, 38, 0.6) 0%, rgba(8, 20, 38, 0) 24%, rgba(8, 20, 38, 0) 78%, rgba(8, 20, 38, 0.5) 100%),
+      linear-gradient(270deg, rgba(8, 20, 38, 0.45) 0%, rgba(8, 20, 38, 0) 38%);
+  }
+  .login[data-banner="true"] .login-headline {
+    display: none;
+  }
+  .login[data-banner="true"] .login-brand-tag {
+    display: block;
+    margin-top: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.92);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+  }
+  .login[data-banner="true"] .login-brand-sub {
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+  }
+  .login[data-banner="true"] .login-panel {
+    position: relative;
+    z-index: 3;
+    min-height: 100vh;
+    min-height: 100dvh;
+    place-items: center end;
+    padding: 40px clamp(32px, 6vw, 110px);
+  }
+  .login[data-banner="true"] .login-card {
+    width: 400px;
+    padding: 36px 34px 30px;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 30px 80px rgba(3, 10, 22, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    animation: fade-up 0.7s var(--ease) 0.35s both;
+  }
+  .login[data-banner="true"] .login-foot {
+    color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Điện thoại: banner cao, căn vào toà nhà Việt Đức + sông Danube */
+@media (max-width: 900px) {
+  .login[data-banner="true"] .login-hero::before {
+    background: linear-gradient(180deg, rgba(8, 20, 38, 0.7) 0%, rgba(8, 20, 38, 0) 30%, rgba(8, 20, 38, 0) 80%, rgba(8, 20, 38, 0.3) 100%);
+  }
+  .login[data-banner="true"] .login-hero {
+    min-height: 50vh;
+    min-height: 50dvh;
+    justify-content: flex-start;
+  }
+  .login-bg {
+    background-image: var(--login-banner-mobile, var(--login-banner-desktop));
+    background-position: center 76%;
+    transform-origin: 30% 80%;
+  }
+  .login[data-banner="true"] .login-headline {
+    display: none;
+  }
+  .login[data-banner="true"] .login-brand-sub {
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  }
+  .login[data-banner="true"] .login-panel {
+    margin-top: -56px;
+  }
+  .login[data-banner="true"] .login-card {
+    animation: fade-up 0.6s var(--ease) 0.25s both;
+  }
+}

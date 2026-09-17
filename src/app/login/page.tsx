@@ -39,14 +39,15 @@ export default async function LoginPage() {
   } as CSSProperties;
 
   return (
-    <div className="login" style={style}>
+    <div className="login" style={style} data-banner={desktop || mobile ? "true" : "false"}>
       <aside className="login-hero" data-banner={desktop || mobile ? "true" : "false"}>
-        {desktop || mobile ? null : <div className="login-flame" aria-hidden />}
+        {desktop || mobile ? <div className="login-bg" aria-hidden /> : <div className="login-flame" aria-hidden />}
         <div className="login-brand">
           <img src="/logo-vietduc.png" alt="Việt Đức Group" width={64} height={61} />
           <div>
             <div className="login-brand-name">Vietduc Hotel</div>
             <div className="login-brand-sub">Việt Đức Group · Budapest</div>
+            <div className="login-brand-tag">Vận hành căn hộ gọn gàng, mọi lúc mọi nơi</div>
           </div>
         </div>
         <div className="login-headline">
