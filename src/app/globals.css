@@ -33,7 +33,7 @@
   --radius: 8px;
   --radius-sm: 6px;
   --shadow: 0 1px 2px rgba(15, 27, 45, 0.06), 0 1px 3px rgba(15, 27, 45, 0.08);
-  --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font: var(--font-brand), "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --sidebar-w: 232px;
 }
@@ -1740,4 +1740,758 @@ section:first-of-type > .card-subhead {
   background: var(--surface);
   border-radius: 0 8px 8px 0;
   line-height: 1.55;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+   NỘI THẤT & HIỆU ỨNG (17/09)
+   Navy làm nền thương hiệu, vàng đồng #e0b25f làm điểm nhấn nhỏ.
+   Hiệu ứng ngắn (≤ 350ms), không lặp vô hạn; tắt hết khi máy bật "giảm chuyển động".
+   ═════════════════════════════════════════════════════════════════ */
+:root {
+  --gold: #e0b25f;
+  --gold-soft: #f3dfb5;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 2px 4px rgba(16, 24, 40, 0.05), 0 12px 32px rgba(16, 24, 40, 0.1);
+  --radius: 14px;
+  --radius-sm: 10px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  background:
+    radial-gradient(1200px 500px at 85% -120px, rgba(31, 76, 133, 0.07), transparent 70%),
+    radial-gradient(900px 400px at -10% -80px, rgba(224, 178, 95, 0.06), transparent 70%),
+    #f3f6fa;
+  background-attachment: fixed;
+  font-feature-settings: "tnum" 0;
+  letter-spacing: -0.003em;
+}
+::selection {
+  background: rgba(224, 178, 95, 0.35);
+}
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.015em;
+}
+
+/* Thanh cuộn mảnh */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c3ccd8 transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9d2dd;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #aab6c5;
+}
+
+/* ───── Menu trái ───── */
+.sidebar {
+  background:
+    radial-gradient(260px 220px at 50% 0%, rgba(224, 178, 95, 0.12), transparent 70%),
+    linear-gradient(180deg, #0b1f3a 0%, #0d2647 55%, #091a31 100%);
+  border-right: 1px solid rgba(224, 178, 95, 0.12);
+  box-shadow: 4px 0 24px rgba(8, 20, 38, 0.12);
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+.brand-plate img {
+  filter: drop-shadow(0 6px 18px rgba(224, 178, 95, 0.18));
+  transition: transform 0.4s var(--ease);
+}
+.brand:hover .brand-plate img {
+  transform: scale(1.04) rotate(-1deg);
+}
+.brand-name {
+  letter-spacing: 0.14em;
+  font-size: 12px;
+}
+.nav-group {
+  color: rgba(184, 199, 219, 0.6);
+  letter-spacing: 0.1em;
+  font-size: 10.5px;
+}
+.nav-link {
+  position: relative;
+  color: rgba(219, 229, 242, 0.82);
+  border-radius: 10px;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.nav-link svg {
+  opacity: 0.75;
+  transition: opacity 0.18s, color 0.18s;
+}
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  transform: translateX(2px);
+}
+.nav-link:hover svg {
+  opacity: 1;
+}
+.nav-link[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(224, 178, 95, 0.16), rgba(255, 255, 255, 0.05));
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(224, 178, 95, 0.18);
+}
+.nav-link[aria-current="page"] svg {
+  opacity: 1;
+  color: var(--gold);
+}
+.nav-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--gold);
+  box-shadow: 0 0 12px rgba(224, 178, 95, 0.6);
+}
+.nav-link .count-dot {
+  box-shadow: 0 0 0 2px #0c2242;
+}
+
+/* ───── Thanh trên: kính mờ ───── */
+.topbar {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid rgba(15, 27, 45, 0.07);
+}
+.topbar-avatar {
+  background: linear-gradient(135deg, #1f4c85, #0b1f3a);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--gold);
+}
+.topbar-health.ok::before {
+  animation: pulse-ok 2.4s ease-in-out 3;
+}
+@keyframes pulse-ok {
+  50% {
+    box-shadow: 0 0 0 6px rgba(34, 165, 91, 0.05);
+  }
+}
+
+/* ───── Tiêu đề trang ───── */
+.page-header h1 {
+  font-weight: 800;
+  font-size: 24px;
+}
+
+/* ───── Thẻ ───── */
+.card {
+  border: 1px solid rgba(15, 27, 45, 0.07);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.card-header {
+  border-bottom-color: #eef2f6;
+}
+.card-header h2 {
+  font-weight: 700;
+}
+a:has(> .card.stat),
+a > .stat {
+  display: block;
+}
+.stat {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s;
+}
+.stat::after {
+  content: "";
+  position: absolute;
+  right: -40px;
+  top: -40px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(224, 178, 95, 0.1), transparent 70%);
+  pointer-events: none;
+}
+.stat-value {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+a:hover > .stat {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(31, 76, 133, 0.18);
+}
+
+/* Hàng bấm được */
+.todo-item,
+.mini-row,
+a.mini-row {
+  transition: background 0.16s var(--ease);
+}
+.todo-item .todo-arrow {
+  transition: transform 0.2s var(--ease), color 0.2s;
+}
+.todo-item:hover .todo-arrow {
+  transform: translateX(3px);
+  color: var(--navy-700);
+}
+.todo-count {
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+
+/* ───── Nút ───── */
+.btn {
+  border-radius: 10px;
+  border-color: #d3dbe5;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background 0.16s var(--ease),
+    border-color 0.16s var(--ease),
+    box-shadow 0.16s var(--ease),
+    transform 0.12s var(--ease),
+    color 0.16s;
+}
+.btn:hover:not(:disabled) {
+  border-color: #b9c4d1;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.08);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary {
+  background: linear-gradient(180deg, #22528f 0%, #173a66 100%);
+  border-color: #173a66;
+  box-shadow: 0 1px 2px rgba(11, 31, 58, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2a5d9f 0%, #1b4274 100%);
+  border-color: #173a66;
+  box-shadow: 0 6px 16px rgba(23, 58, 102, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.btn-danger:hover:not(:disabled) {
+  border-color: #e9a39b;
+}
+
+/* ───── Ô nhập ───── */
+.input,
+.select,
+.textarea {
+  border-color: #d3dbe5;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: inset 0 1px 1px rgba(16, 24, 40, 0.03);
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+.input:hover,
+.select:hover,
+.textarea:hover {
+  border-color: #b9c4d1;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--navy-600);
+  box-shadow: 0 0 0 4px rgba(31, 76, 133, 0.14);
+}
+
+/* ───── Nhãn ───── */
+.badge {
+  box-shadow: inset 0 0 0 1px rgba(15, 27, 45, 0.04);
+}
+
+/* ───── Bảng ───── */
+.table th {
+  background: linear-gradient(180deg, #fafbfd, #f5f7fa);
+  letter-spacing: 0.05em;
+}
+.table tbody tr {
+  transition: background 0.14s;
+}
+.table tr:hover td {
+  background: #f6f9fd;
+}
+.table-wrap {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* ───── Thông báo ───── */
+.notice {
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ───── Menu "⋯", hộp thoại ───── */
+.menu-pop {
+  animation: pop-in 0.16s var(--ease);
+  transform-origin: top right;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+dialog.dialog {
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(8, 20, 38, 0.32);
+}
+dialog.dialog[open] {
+  animation: dialog-in 0.22s var(--ease);
+}
+dialog.dialog::backdrop {
+  background: rgba(8, 20, 38, 0.42);
+  backdrop-filter: blur(3px);
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+details.fold {
+  box-shadow: var(--shadow);
+  border-color: rgba(15, 27, 45, 0.07);
+}
+details.fold > summary {
+  transition: background 0.16s;
+  border-radius: var(--radius);
+}
+details.fold > summary:hover {
+  background: #f8fafc;
+}
+details.fold[open] > .fold-body,
+details.fold[open] > :not(summary) {
+  animation: fade-up 0.25s var(--ease);
+}
+
+/* ───── Chuyển trang: nội dung trồi nhẹ, lần lượt ───── */
+.page-enter > .stack > * {
+  animation: fade-up 0.34s var(--ease) both;
+}
+.page-enter > .stack > :nth-child(2) {
+  animation-delay: 0.03s;
+}
+.page-enter > .stack > :nth-child(3) {
+  animation-delay: 0.06s;
+}
+.page-enter > .stack > :nth-child(4) {
+  animation-delay: 0.09s;
+}
+.page-enter > .stack > :nth-child(n + 5) {
+  animation-delay: 0.12s;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ───── Khung đang tải (shimmer) ───── */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #e9eef4;
+  border-radius: var(--radius);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ───── Điện thoại ───── */
+@media (max-width: 900px) {
+  body {
+    background: #eef2f7;
+  }
+  .appbar {
+    background:
+      radial-gradient(240px 120px at 12% 0%, rgba(224, 178, 95, 0.16), transparent 70%),
+      linear-gradient(180deg, #0b1f3a, #0f2748);
+  }
+  .appbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(224, 178, 95, 0.45), transparent);
+  }
+  .appbar-logo {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .avatar {
+    background: linear-gradient(135deg, #22528f, #0b1f3a);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s var(--ease);
+  }
+  .avatar:active {
+    transform: scale(0.94);
+  }
+  .card {
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 18px rgba(16, 24, 40, 0.05);
+  }
+  a:hover > .stat {
+    transform: none;
+  }
+  .btn:hover:not(:disabled) {
+    transform: none;
+  }
+
+  /* Lời chào: ánh vàng + hình ngọn lửa mờ */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(260px 180px at 100% 0%, rgba(224, 178, 95, 0.28), transparent 70%),
+      radial-gradient(300px 200px at 0% 100%, rgba(42, 93, 159, 0.5), transparent 70%),
+      linear-gradient(160deg, #0f2748 0%, #173a66 100%);
+    box-shadow: 0 10px 30px rgba(11, 31, 58, 0.25);
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: -24px;
+    bottom: -30px;
+    width: 170px;
+    height: 170px;
+    background: url("/icon.png") center / contain no-repeat;
+    opacity: 0.09;
+    transform: rotate(-12deg);
+    pointer-events: none;
+  }
+  .hero > * {
+    position: relative;
+    z-index: 1;
+  }
+  .hero-hello {
+    animation: fade-up 0.4s var(--ease) both;
+  }
+
+  /* Tab đáy */
+  .tabbar {
+    box-shadow: 0 -6px 24px rgba(16, 24, 40, 0.06);
+  }
+  .tab-icon {
+    transition: background 0.22s var(--ease), transform 0.12s var(--ease), width 0.22s var(--ease);
+  }
+  .tab-item[aria-current="page"] .tab-icon {
+    width: 56px;
+    background: linear-gradient(180deg, #e6edf7, #dbe5f2);
+  }
+  .tab-item[aria-current="page"]::before {
+    box-shadow: 0 0 10px rgba(224, 178, 95, 0.7);
+  }
+
+  /* Bảng "Thêm" */
+  .tile {
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.12s var(--ease), box-shadow 0.12s;
+  }
+  .tile-icon {
+    background: linear-gradient(135deg, #e6edf7, #d6e1f0);
+  }
+  .quick-action:first-child {
+    background: linear-gradient(180deg, #173a66, #0b1f3a);
+    box-shadow: 0 6px 16px rgba(11, 31, 58, 0.25);
+  }
+
+  /* Thẻ bấm: nhún nhẹ */
+  .todo-item:active,
+  a.mini-row:active,
+  .tile:active {
+    background: #eef3fa;
+  }
+
+  .page-enter > .stack > * {
+    animation-duration: 0.28s;
+  }
+}
+
+/* Máy bật giảm chuyển động: tắt hiệu ứng */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═════ Trang đăng nhập ═════
+   Máy tính: chia đôi — trái là banner thương hiệu, phải là khung đăng nhập.
+   Điện thoại: banner phía trên, khung đăng nhập nổi đè lên mép dưới banner.
+   Ảnh banner (khi có) đặt qua biến --login-banner-desktop / --login-banner-mobile. */
+.login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
+  background: #f3f6fa;
+}
+.login-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 44px 52px;
+  color: #fff;
+  background:
+    var(--login-banner-desktop, none) center / cover no-repeat,
+    radial-gradient(520px 380px at 85% 10%, rgba(224, 178, 95, 0.28), transparent 70%),
+    radial-gradient(600px 420px at 0% 100%, rgba(42, 93, 159, 0.55), transparent 70%),
+    linear-gradient(155deg, #0b1f3a 0%, #122f57 55%, #0a1c35 100%);
+}
+/* Lớp phủ tối dần để chữ trên ảnh luôn đọc được */
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(8, 20, 38, 0.35) 0%, rgba(8, 20, 38, 0.05) 40%, rgba(8, 20, 38, 0.75) 100%);
+  pointer-events: none;
+}
+.login-hero[data-banner="false"]::after {
+  /* Chưa có ảnh: hoạ tiết lưới mảnh + ngọn lửa mờ làm nền trang trí */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 44px 44px;
+  opacity: 0.9;
+  mask-image: radial-gradient(ellipse at 70% 60%, #000 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at 70% 60%, #000 30%, transparent 80%);
+  pointer-events: none;
+}
+.login-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.login-brand img {
+  width: 64px;
+  height: auto;
+  filter: drop-shadow(0 6px 18px rgba(224, 178, 95, 0.3));
+}
+.login-brand-name {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.login-brand-sub {
+  font-size: 13px;
+  color: rgba(219, 229, 242, 0.75);
+}
+.login-headline {
+  max-width: 520px;
+  animation: fade-up 0.6s var(--ease) both;
+}
+.login-headline h2 {
+  color: #fff;
+  font-size: 40px;
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
+}
+.login-headline h2 em {
+  font-style: normal;
+  color: var(--gold);
+}
+.login-headline p {
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: rgba(231, 238, 247, 0.85);
+}
+.login-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.login-points span {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+}
+.login-foot {
+  font-size: 12.5px;
+  color: rgba(219, 229, 242, 0.6);
+}
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: 40px 32px;
+}
+.login-card {
+  width: min(400px, 100%);
+  animation: fade-up 0.5s var(--ease) 0.08s both;
+}
+.login-card h1 {
+  font-size: 28px;
+  font-weight: 800;
+}
+.login-card .login-lead {
+  margin: 6px 0 26px;
+  color: var(--text-faint);
+}
+.login-card .btn-lg {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 4px;
+  font-size: 16px;
+}
+.login-card .input {
+  min-height: 48px;
+}
+.login-mobile-brand {
+  display: none;
+}
+.login-help {
+  margin-top: 22px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .login {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    background: #f3f6fa;
+  }
+  .login-hero {
+    min-height: 42vh;
+    min-height: 42dvh;
+    padding: calc(22px + env(safe-area-inset-top)) 22px 64px;
+    background:
+      var(--login-banner-mobile, var(--login-banner-desktop, none)) center / cover no-repeat,
+      radial-gradient(300px 220px at 100% 0%, rgba(224, 178, 95, 0.3), transparent 70%),
+      radial-gradient(320px 240px at 0% 100%, rgba(42, 93, 159, 0.6), transparent 70%),
+      linear-gradient(160deg, #0b1f3a 0%, #133261 100%);
+    border-radius: 0 0 28px 28px;
+  }
+  .login-hero[data-banner="false"]::after {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 32px 32px;
+  }
+  .login-brand img {
+    width: 48px;
+  }
+  .login-headline h2 {
+    font-size: 27px;
+  }
+  .login-headline p {
+    font-size: 14.5px;
+    margin-top: 8px;
+  }
+  .login-points,
+  .login-foot {
+    display: none;
+  }
+  .login-panel {
+    place-items: start center;
+    padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+    margin-top: -44px;
+    position: relative;
+    z-index: 2;
+  }
+  .login-card {
+    padding: 24px 20px;
+    background: #fff;
+    border-radius: 22px;
+    box-shadow: 0 18px 48px rgba(11, 31, 58, 0.16);
+  }
+  .login-card h1 {
+    font-size: 23px;
+  }
+  .login-card .login-lead {
+    margin-bottom: 18px;
+  }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Ngọn lửa trang trí khi chưa có banner: mờ, không đè chữ */
+.login-flame {
+  position: absolute !important;
+  right: -90px;
+  bottom: -70px;
+  width: 460px;
+  height: 460px;
+  background: url("/icon.png") center / contain no-repeat;
+  opacity: 0.16;
+  transform: rotate(-10deg);
+  pointer-events: none;
+  z-index: 0 !important;
+}
+@media (max-width: 900px) {
+  .login-flame {
+    right: -60px;
+    bottom: -40px;
+    width: 220px;
+    height: 220px;
+    opacity: 0.12;
+  }
+  .login-headline p {
+    display: none;
+  }
+  .login-hero {
+    min-height: 36vh;
+    min-height: 36dvh;
+  }
 }

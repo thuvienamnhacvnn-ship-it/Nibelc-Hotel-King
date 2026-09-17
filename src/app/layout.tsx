@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { Be_Vietnam_Pro } from "next/font/google";
 import "./globals.css";
+
+// Font thiết kế cho tiếng Việt (dấu đẹp, rõ ở cỡ nhỏ). Next tự tải về khi build và phục vụ từ chính server — không gọi Google lúc chạy.
+const beVietnam = Be_Vietnam_Pro({ subsets: ["vietnamese", "latin"], weight: ["400", "500", "600", "700", "800"], display: "swap", variable: "--font-brand" });
 
 export const metadata: Metadata = {
   title: { default: "Vietduc Hotel", template: "%s · Vietduc Hotel" },
@@ -19,7 +23,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="vi" className={beVietnam.variable}>
       <body>{children}</body>
     </html>
   );
