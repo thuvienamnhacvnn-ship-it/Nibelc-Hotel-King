@@ -8,7 +8,8 @@ import { type Actor, assertCan, can } from "@/modules/auth/actor";
 import { type AuditActor, auditActorOf, writeAudit } from "@/modules/audit/audit";
 import { isPaused } from "@/modules/automation/switches";
 import { enqueueStaffNotification } from "@/modules/notifications/enqueue";
-import type { FindGroundedAnswer, GroundedAnswer } from "@/modules/qa/contract";
+import type { FindGroundedAnswer, GroundedAnswer, GroundingQuery } from "@/modules/qa/contract";
+import type { AiComposeResult, ComposeGuestReply } from "./ai-compose";
 import {
   TICKET_CATEGORIES,
   TICKET_PRIORITIES,
@@ -29,7 +30,9 @@ import { type SendResult, sendWhatsAppText } from "./transport";
 /**
  * Hộp thư hợp nhất (Trợ lý 3). Quy tắc chính:
  *   - Nhận tin idempotent: cùng connector + luồng + mã tin chỉ lưu một lần (khoá tư vấn + kiểm trước rồi ghi).
- *   - Bot KHÔNG dùng LLM: chỉ soạn nháp từ Q&A đã duyệt (có căn cứ). Tự gửi chỉ khi công tắc guest + whatsapp_guest mở.
+ *   - Bot soạn từ Q&A đã duyệt (có căn cứ). Tự gửi chỉ khi công tắc guest + whatsapp_guest mở.
+ *   - Trợ lý AI (Claude, công tắc agent:guest_ai) nếu bật: soạn nháp đa ngôn ngữ chỉ từ Q&A đã duyệt, LUÔN chờ người duyệt;
+ *     AI không dùng được thì quay về tra từ khoá.
  *   - Mã cửa / hoàn tiền / sự cố / không căn cứ ⇒ không trả lời, tạo handoff + ticket.
  *   - Người tiếp quản ⇒ bot im lặng tới khi trả lại.
  *   - Báo cho đội qua enqueueStaffNotification trong giao dịch — module này không tự gửi WhatsApp cho nhân viên.
@@ -37,12 +40,15 @@ import { type SendResult, sendWhatsAppText } from "./transport";
 
 export interface InboxDeps {
   findAnswer: FindGroundedAnswer;
+  /** Không truyền ⇒ không dùng AI (kiểm thử truyền findAnswer + send nên mặc định không gọi AI). */
+  composeAi?: ComposeGuestReply;
   send: (orgId: string, connectorId: string, toJidOrPhone: string, text: string, opts?: { maxWaitMs?: number }) => Promise<SendResult>;
 }
 
 async function defaultDeps(): Promise<InboxDeps> {
   const { findGroundedAnswer } = await import("@/modules/qa/retrieval");
-  return { findAnswer: findGroundedAnswer, send: sendWhatsAppText };
+  const { composeGuestReply } = await import("./ai-compose");
+  return { findAnswer: findGroundedAnswer, send: sendWhatsAppText, composeAi: composeGuestReply };
 }
 
 async function resolveDeps(deps?: Partial<InboxDeps>): Promise<InboxDeps> {
@@ -282,7 +288,33 @@ export async function runGuestBot(orgId: string, conversationId: string, inbound
     ? { reason: intent.reason, category: intent.category, priority: intent.priority }
     : null;
 
+  let ai: AiComposeResult = { status: "unavailable", reason: "not_used" };
   if (!handoff) {
+    const d = await resolveDeps(deps);
+    const gq: GroundingQuery = {
+      orgId,
+      text,
+      unitId: conv.unit_id,
+      propertyId: conv.property_id,
+      verification: conv.verification_level,
+      language: detectLanguage(text),
+      opsDate: todayOps(),
+    };
+    if (d.composeAi) {
+      try {
+        ai = await d.composeAi({ orgId, conversationId, inboundMessageId, text, grounding: gq });
+      } catch (error) {
+        console.error("[inbox] trợ lý AI lỗi với tin", inboundMessageId, (error as Error)?.message);
+      }
+    }
+    if (ai.status === "handoff") {
+      handoff =
+        ai.reason === "access_like_answer"
+          ? { reason: ai.reason, category: "access", priority: "P1" }
+          : { reason: ai.reason === "handoff_entry" ? "handoff_entry" : "no_grounded_answer", category: "question", priority: "P2" };
+    }
+  }
+  if (!handoff && ai.status !== "answer") {
     const d = await resolveDeps(deps);
     answer = await d.findAnswer({
       orgId,
@@ -310,7 +342,7 @@ export async function runGuestBot(orgId: string, conversationId: string, inbound
         category: handoff.category,
         priority: handoff.priority,
         summary: `${HANDOFF_REASON_LABELS[handoff.reason] ?? handoff.reason}`,
-        stepsTried: intent ? ["Nhận diện yêu cầu nhạy cảm — bot không trả lời"] : ["Tra kho Q&A đã duyệt"],
+        stepsTried: intent ? ["Nhận diện yêu cầu nhạy cảm — bot không trả lời"] : ai.status === "handoff" ? [`Trợ lý AI đối chiếu Kho Q&A: ${ai.note}`] : ["Tra kho Q&A đã duyệt"],
         audit: BOT_AUDIT(orgId),
         createdByType: "bot",
         createdBy: null,
@@ -318,6 +350,31 @@ export async function runGuestBot(orgId: string, conversationId: string, inbound
         sourceMessageId: inboundMessageId,
       });
       return { action: "handoff", handoffId: res.handoffId, ticketId: res.ticketId, reason: handoff.reason, created: res.created };
+    }
+    if (ai.status === "answer") {
+      // Nháp AI: luôn chờ người duyệt, bất kể công tắc gửi tự động.
+      const first = ai.entries[0];
+      const grounding = {
+        ai: true,
+        model: ai.model,
+        runId: ai.runId,
+        entryId: first.id,
+        entryKey: first.entry_key,
+        version: first.version,
+        scope: first.scope,
+        topic: ai.entries.map((e) => e.topic).join(", "),
+        entries: ai.entries.map((e) => ({ entryId: e.id, entryKey: e.entry_key, version: e.version, topic: e.topic })),
+        language: ai.language,
+        score: null,
+        inReplyTo: inboundMessageId,
+      };
+      const { rows } = await tx.query<{ id: string }>(
+        `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, grounding)
+         VALUES ($1,$2,'out','bot','Trợ lý AI',$3,'draft',$4) RETURNING id`,
+        [orgId, conversationId, ai.reply, JSON.stringify(grounding)],
+      );
+      await writeAudit(tx, BOT_AUDIT(orgId), "inbox.ai_draft", "message", rows[0].id, { conversationId, runId: ai.runId, entryKeys: ai.entries.map((e) => e.entry_key) });
+      return { action: "draft", messageId: rows[0].id, autoSend: false, pausedReason: "Nháp do trợ lý AI soạn — luôn chờ người duyệt" };
     }
     const a = answer!;
     const paused = await isPaused(orgId, [{ scope: "agent", key: "guest" }, { scope: "channel", key: "whatsapp_guest" }], { client: tx });

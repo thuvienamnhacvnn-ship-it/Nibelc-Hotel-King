@@ -52,11 +52,13 @@ export function scoreEntry(questionText: string | Set<string>, entry: Pick<QaCan
   return Math.round(Math.min(1, best) * 100) / 100;
 }
 
-export const findGroundedAnswer: FindGroundedAnswer = async (input: GroundingQuery) => {
-  const q = keywordTokens(input.text ?? "");
-  // Tham số sai dạng thì dừng trước khi chạy SQL (bẫy PGlite: câu lệnh lỗi làm lệch kết nối).
-  if (q.size === 0 || !asUuid(input.orgId) || !isValidDate(input.opsDate ?? "")) return null;
-
+/**
+ * Các mục Q&A khách được phép nhận trong ngữ cảnh này: đã duyệt, còn hiệu lực theo ngày Budapest,
+ * đúng phạm vi (chung / nhà / phòng của hội thoại), mục "restricted" chỉ khi đã khớp booking.
+ * Dùng chung cho tra từ khoá và cho trợ lý AI (AI chỉ được thấy đúng những mục này).
+ */
+export async function eligibleEntries(input: GroundingQuery): Promise<QaCandidateRow[]> {
+  if (!asUuid(input.orgId) || !isValidDate(input.opsDate ?? "")) return [];
   // Chỉ nhận id phòng/nhà thuộc đúng tổ chức; có phòng mà thiếu nhà thì lấy nhà của phòng.
   let unitId: string | null = null;
   let propertyId: string | null = null;
@@ -72,7 +74,7 @@ export const findGroundedAnswer: FindGroundedAnswer = async (input: GroundingQue
     propertyId = prop?.id ?? null;
   }
 
-  const rows = await query<QaCandidateRow>(
+  return query<QaCandidateRow>(
     `SELECT id, entry_key, version, scope, topic, question, variants, answer_en, answer_vi, sensitivity
        FROM qa_entries
       WHERE org_id = $1
@@ -82,9 +84,17 @@ export const findGroundedAnswer: FindGroundedAnswer = async (input: GroundingQue
         AND (scope = 'general'
              OR (scope = 'property' AND property_id = $3::uuid)
              OR (scope = 'unit' AND unit_id = $4::uuid))
-        AND ($5::boolean OR sensitivity <> 'restricted')`,
+        AND ($5::boolean OR sensitivity <> 'restricted')
+      ORDER BY CASE scope WHEN 'unit' THEN 0 WHEN 'property' THEN 1 ELSE 2 END, topic, id`,
     [input.orgId, input.opsDate, propertyId, unitId, input.verification !== "none"],
   );
+}
+
+export const findGroundedAnswer: FindGroundedAnswer = async (input: GroundingQuery) => {
+  const q = keywordTokens(input.text ?? "");
+  // Tham số sai dạng thì dừng trước khi chạy SQL (bẫy PGlite: câu lệnh lỗi làm lệch kết nối).
+  if (q.size === 0 || !asUuid(input.orgId) || !isValidDate(input.opsDate ?? "")) return null;
+  const rows = await eligibleEntries(input);
 
   const scored = rows.map((row) => ({ row, score: scoreEntry(q, row) })).filter((c) => c.score >= MIN_SCORE);
   if (scored.length === 0) return null;

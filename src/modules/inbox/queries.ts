@@ -113,6 +113,7 @@ export interface MessageView {
   status: string;
   error: string | null;
   grounding: {
+    ai?: boolean;
     entryId?: string;
     entryKey?: string;
     version?: number;

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { aiConfigured, guestModel } from "@/modules/ai/claude";
+import { aiSpendThisMonthUsd, monthlyBudgetUsd } from "@/modules/inbox/ai-compose";
 import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, Pagination, Tabs, HelpNote } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
 import { requireActor } from "@/lib/session";
@@ -108,7 +110,7 @@ type PP = { page: number; pageSize: number; offset: number };
 type HrefFor = (extra: Record<string, string | null>) => string;
 
 async function OverviewTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
-  const [switches, worker, budget, org] = await Promise.all([listSwitches(actor), workerStatus(), aiBudget(actor), orgInfo(actor.orgId)]);
+  const [switches, worker, budget, org, aiSpend] = await Promise.all([listSwitches(actor), workerStatus(), aiBudget(actor), orgInfo(actor.orgId), aiSpendThisMonthUsd(actor.orgId)]);
   const lastBeat = worker?.last_beat_at ? new Date(worker.last_beat_at) : null;
   const alive = !!lastBeat && now().getTime() - lastBeat.getTime() < 60_000;
   // Worker mất nhịp: xếp thông báo trong app cho người trực kỹ thuật (idempotent theo mốc nhịp cuối).
@@ -188,12 +190,13 @@ async function OverviewTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
         <Card title="Ngân sách AI">
           <KeyValue
             items={[
+              ["Claude API", aiConfigured() ? <Badge key="k" tone="ok">Đã cấu hình khoá</Badge> : <Badge key="k" tone="neutral">Chưa có khoá</Badge>],
+              ["Model soạn nháp khách", <span key="m" className="mono small">{guestModel()}</span>],
+              ["Chi phí tháng này", `≈ ${aiSpend.toFixed(2)} USD / trần ${monthlyBudgetUsd().toFixed(0)} USD`],
               ["Lượt chạy trợ lý đã ghi", budget.runs],
-              ["Ngân sách đã cấp", formatMoney(budget.budget, org?.currency ?? "EUR")],
-              ["Chi phí đã dùng", formatMoney(budget.cost, org?.currency ?? "EUR")],
             ]}
           />
-          <div className="small faint" style={{ marginTop: 8 }}>Chưa kết nối model AI — chưa phát sinh chi phí.</div>
+          <div className="small faint" style={{ marginTop: 8 }}>Vượt trần tháng thì trợ lý AI tự ngừng, bot quay về tra từ khoá. Đổi trần bằng biến AI_MONTHLY_BUDGET_USD trên server.</div>
           <HelpNote title="Giới hạn gửi WhatsApp nội bộ">
             Tối đa 1 tin/phút/người (cảnh báo P0/P1 được vượt), giãn cách và trần theo giờ của số tổng đài dùng chung với hộp thư; vượt mức thì tin chờ lượt sau, không bị bỏ. Chỉ gửi tới số đã từng nhắn vào đúng số tổng đài đó.
           </HelpNote>

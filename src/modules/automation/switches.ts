@@ -8,7 +8,7 @@ import { pool } from "@/lib/db";
  */
 export type SwitchScope = "org" | "agent" | "channel";
 
-export const AGENT_KEYS = ["booking", "cleaning", "guest", "manager"] as const;
+export const AGENT_KEYS = ["booking", "cleaning", "guest", "guest_ai", "manager"] as const;
 export const CHANNEL_KEYS = ["whatsapp_staff", "whatsapp_guest", "report_delivery"] as const;
 
 export async function isPaused(

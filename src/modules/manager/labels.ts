@@ -5,6 +5,7 @@ export const SWITCH_LABELS: Record<string, { label: string; hint: string }> = {
   "agent:booking": { label: "Trợ lý 1 — Booking", hint: "Cập nhật booking từ tin nhắn/sự kiện trong phạm vi được cấp." },
   "agent:cleaning": { label: "Trợ lý 2 — Cleaning", hint: "Phân công, nhắc việc, hỗ trợ kiểm ảnh." },
   "agent:guest": { label: "Trợ lý 3 — Hỗ trợ khách", hint: "Tự trả lời Q&A đã duyệt, chuyển người khi cần." },
+  "agent:guest_ai": { label: "Trợ lý AI soạn nháp cho khách (Claude)", hint: "Đọc tin khách bằng mọi ngôn ngữ, soạn nháp chỉ từ Kho Q&A đã duyệt. Luôn chờ người duyệt, không tự gửi. Có trần chi phí mỗi tháng." },
   "agent:manager": { label: "Agent Manager", hint: "Đẩy cảnh báo lên cấp trên, gửi thông báo đội, gửi báo cáo." },
   "channel:whatsapp_staff": { label: "WhatsApp nội bộ (báo cho đội)", hint: "Tin cảnh báo/báo cáo gửi tới số của nhân viên. Tổng đài từng bị WhatsApp gỡ thiết bị — bật khi đã có mẫu duyệt và hạn mức." },
   "channel:whatsapp_guest": { label: "WhatsApp cho khách", hint: "Trợ lý trả lời khách qua WhatsApp." },

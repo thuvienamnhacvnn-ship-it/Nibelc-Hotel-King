@@ -317,7 +317,17 @@ function ConversationPanel({
                 {m.attachments?.length ? <div className="small faint">Đính kèm: {m.attachments.map((a) => a.kind).join(", ")} (chưa tải nội dung)</div> : null}
                 {m.grounding ? (
                   <div className="small muted">
-                    Căn cứ Q&A: {m.grounding.topic ?? "—"} · phiên bản {m.grounding.version ?? "?"} · phạm vi {m.grounding.scope ?? "?"} · độ khớp từ khoá {m.grounding.score != null ? m.grounding.score.toFixed(2) : "?"}
+                    {m.grounding.ai ? (
+                      <>
+                        <Badge tone="info">AI soạn</Badge> Căn cứ Q&A: {m.grounding.topic ?? "—"}
+                        {m.grounding.language ? ` · ngôn ngữ ${m.grounding.language}` : ""}
+                      </>
+                    ) : (
+                      <>
+                        Căn cứ Q&A: {m.grounding.topic ?? "—"} · phiên bản {m.grounding.version ?? "?"} · phạm vi {m.grounding.scope ?? "?"} · độ khớp từ khoá{" "}
+                        {m.grounding.score != null ? m.grounding.score.toFixed(2) : "?"}
+                      </>
+                    )}
                     {m.grounding.editedByStaff ? " · đã sửa trước khi gửi" : ""}
                   </div>
                 ) : null}
