@@ -2610,3 +2610,66 @@ details.fold[open] > :not(summary) {
     animation: fade-up 0.6s var(--ease) 0.25s both;
   }
 }
+
+/* Điện thoại có ảnh dọc: ảnh phủ toàn màn hình, khung đăng nhập kính mờ gọn đặt trên vùng sông
+   (giữa màn hình) — phía trên thấy trời/cầu, phía dưới thấy toà nhà Việt Đức. */
+@media (max-width: 900px) {
+  .login[data-banner="true"] {
+    display: block;
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+    background: #0b1f3a;
+  }
+  .login[data-banner="true"] .login-hero {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    border-radius: 0;
+    padding: calc(18px + env(safe-area-inset-top)) 20px 0;
+  }
+  .login[data-banner="true"] .login-bg {
+    background-image: var(--login-banner-mobile, var(--login-banner-desktop));
+    background-position: center center;
+    transform-origin: 50% 70%;
+  }
+  .login[data-banner="true"] .login-hero::before {
+    background: linear-gradient(180deg, rgba(8, 20, 38, 0.6) 0%, rgba(8, 20, 38, 0) 22%, rgba(8, 20, 38, 0) 85%, rgba(8, 20, 38, 0.35) 100%);
+  }
+  .login[data-banner="true"] .login-panel {
+    position: relative;
+    z-index: 3;
+    margin-top: 0;
+    padding: calc(104px + env(safe-area-inset-top)) 18px 24px;
+  }
+  .login[data-banner="true"] .login-card {
+    padding: 20px 18px 16px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 20px 50px rgba(3, 10, 22, 0.45);
+  }
+  .login[data-banner="true"] .login-card h1 {
+    font-size: 21px;
+  }
+  .login[data-banner="true"] .login-card .login-lead {
+    display: none;
+  }
+  .login[data-banner="true"] .login-card .stack {
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .login[data-banner="true"] .login-card .input {
+    min-height: 44px;
+  }
+  .login[data-banner="true"] .login-card .btn-lg {
+    min-height: 46px;
+  }
+  .login[data-banner="true"] .login-help {
+    margin-top: 10px;
+    font-size: 12px;
+  }
+}
