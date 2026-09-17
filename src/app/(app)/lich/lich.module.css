@@ -167,15 +167,17 @@
 }
 .indirect {
   display: block;
-  font-size: 11px;
-  color: var(--text-faint);
-  font-style: italic;
-  padding: 1px 4px;
-  border: 1px dashed var(--border-strong);
+  height: 18px;
+  line-height: 18px;
+  font-size: 10px;
+  color: #9aa6b6;
+  padding: 0 4px;
   border-radius: 4px;
+  background: repeating-linear-gradient(135deg, #eef1f5 0 5px, #f7f9fb 5px 10px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: help;
 }
 .legend .indirect {
   display: inline-block;
@@ -199,4 +201,9 @@
     width: 104px;
     min-width: 104px;
   }
+}
+
+.legendHatch {
+  display: inline-block;
+  width: 26px;
 }

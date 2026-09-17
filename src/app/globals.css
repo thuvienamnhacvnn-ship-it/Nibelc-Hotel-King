@@ -1302,3 +1302,442 @@ dialog.dialog::backdrop {
     text-decoration: none;
   }
 }
+
+/* ═════ Tinh chỉnh gọn gàng (17/09) ═════
+   Nguyên tắc: một nhãn DEMO cho cả tổ chức, nhãn trạng thái nhỏ & dịu, thông báo là dải mảnh, ô trống gọn. */
+
+/* Tổ chức DEMO: nhãn DEMO đã hiện một lần ở thanh trên — ẩn nhãn lặp trên từng dòng */
+.shell[data-demo-org="true"] .content .demo-mark {
+  display: none;
+}
+
+/* Thanh trên (máy tính) */
+.topbar {
+  min-height: 56px;
+}
+.topbar-org {
+  font-weight: 700;
+  color: var(--navy-900);
+}
+.topbar-demo {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e0b25f;
+  color: var(--navy-900);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.topbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+.topbar-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.topbar-health::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.topbar-health.ok {
+  color: var(--ok);
+}
+.topbar-health.ok::before {
+  background: #22a55b;
+  box-shadow: 0 0 0 3px rgba(34, 165, 91, 0.15);
+}
+.topbar-health.bad {
+  color: var(--danger);
+}
+.topbar-health.bad::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15);
+}
+.topbar-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.2;
+}
+.topbar-user > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.topbar-role {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.topbar-avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--navy-700);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+/* Menu trái gọn hơn */
+.nav-link {
+  padding: 7px 10px;
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.nav-group {
+  margin-top: 18px;
+}
+
+/* Tiêu đề trang: mô tả một dòng, màu nhạt */
+.page-header h1 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.page-header p {
+  font-size: 14px;
+  color: var(--text-faint);
+  max-width: 820px;
+}
+
+/* Thẻ */
+.card-header {
+  min-height: 50px;
+}
+.card-header h2 {
+  font-size: 15.5px;
+}
+.card-header h2 .count {
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Nhãn trạng thái: nhỏ, dịu, không chữ đậm quá */
+.badge {
+  padding: 1px 8px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.badge-neutral {
+  color: #5b6b80;
+  background: #eef1f5;
+}
+
+/* Thông báo: dải mảnh có vạch màu bên trái thay vì khối màu lớn */
+.notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  padding: 10px 14px;
+  color: var(--text);
+}
+.notice .strong {
+  margin-bottom: 1px;
+}
+.notice-warn {
+  background: #fffbf0;
+  border-color: #f0dca8;
+  border-left-color: #d99a1e;
+  color: #4a3500;
+}
+.notice-danger {
+  background: #fff7f6;
+  border-color: #f3c9c4;
+  border-left-color: var(--danger);
+  color: #6a160f;
+}
+.notice-info {
+  background: var(--surface);
+  border-color: var(--border);
+  border-left-color: var(--navy-600);
+  color: var(--text-muted);
+}
+.notice-demo {
+  background: #fbf8ff;
+  border-color: #e4d4fb;
+  border-left-color: var(--demo);
+  color: #4c1d95;
+}
+
+/* Trạng thái trống: gọn, không chữ đậm to */
+.empty {
+  padding: 22px 16px;
+  font-size: 14px;
+  color: var(--text-faint);
+}
+.empty strong {
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+/* Bảng */
+.table th {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-faint);
+  padding: 10px 12px;
+}
+.table td {
+  padding: 10px 12px;
+}
+
+/* Khối thu gọn (chi tiết kỹ thuật, nguồn DEMO…) */
+details.fold {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+details.fold > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-weight: 700;
+  color: var(--navy-900);
+}
+details.fold > summary::-webkit-details-marker {
+  display: none;
+}
+details.fold > summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--text-faint);
+  transition: transform 0.2s;
+}
+details.fold[open] > summary::after {
+  transform: rotate(180deg);
+}
+details.fold[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+details.fold > .fold-body {
+  padding: 14px 16px;
+}
+details.fold .fold-hint {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* Danh sách "cần xử lý" */
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.todo-list li + li {
+  border-top: 1px solid #edf1f6;
+}
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  color: var(--text);
+}
+.todo-item:hover {
+  background: var(--navy-50);
+  text-decoration: none;
+}
+.todo-count {
+  min-width: 34px;
+  height: 28px;
+  padding: 0 8px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: var(--neutral-bg);
+  color: var(--neutral);
+}
+.todo-count.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.todo-count.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.todo-label {
+  flex: 1;
+  font-weight: 600;
+}
+.todo-sub {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.todo-arrow {
+  color: var(--text-faint);
+}
+.todo-done {
+  padding: 18px 16px;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+/* Danh sách người/phòng trong ngày */
+.mini-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mini-list li + li {
+  border-top: 1px solid #edf1f6;
+}
+.mini-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: var(--text);
+}
+a.mini-row:hover {
+  background: var(--navy-50);
+  text-decoration: none;
+}
+.mini-unit {
+  min-width: 52px;
+  font-weight: 800;
+  color: var(--navy-900);
+}
+.mini-main {
+  flex: 1;
+  min-width: 0;
+}
+.mini-main > div:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-sub {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .todo-item,
+  .mini-row {
+    padding: 12px 14px;
+  }
+}
+.card-subhead {
+  padding: 10px 16px 6px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  border-top: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+}
+section:first-of-type > .card-subhead {
+  border-top: 0;
+}
+.mini-empty {
+  padding: 10px 16px;
+  font-size: 13.5px;
+  color: var(--text-faint);
+}
+
+/* Menu "⋯" thao tác phụ */
+.more-menu {
+  position: relative;
+  display: inline-block;
+}
+.more-trigger {
+  min-width: 34px;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0.05em;
+}
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 210px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(11, 31, 58, 0.16);
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy-900);
+  cursor: pointer;
+}
+.menu-item:hover {
+  background: var(--navy-50);
+}
+.menu-item.danger {
+  color: var(--danger);
+}
+.menu-item.danger:hover {
+  background: var(--danger-bg);
+}
+@media (max-width: 900px) {
+  .more-trigger {
+    min-width: 44px;
+  }
+  .menu-item {
+    padding: 12px;
+    font-size: 15px;
+  }
+}
+
+/* Ghi chú quy tắc gập */
+.help-note {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.help-note > summary {
+  cursor: pointer;
+  width: max-content;
+  max-width: 100%;
+  font-weight: 600;
+  color: var(--navy-600);
+  list-style: none;
+}
+.help-note > summary::-webkit-details-marker {
+  display: none;
+}
+.help-note[open] > .help-body {
+  margin-top: 6px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--navy-100);
+  background: var(--surface);
+  border-radius: 0 8px 8px 0;
+  line-height: 1.55;
+}

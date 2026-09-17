@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination, type Tone } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination, type Tone, HelpNote, FoldCard } from "@/components/ui";
 import { requireActor } from "@/lib/session";
 import { formatInstant } from "@/lib/time";
 import { DEMO_SCENARIO_LABELS, canRunDemoFeed } from "@/modules/connectors/demo-feed";
@@ -71,7 +71,7 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
     <div className="stack">
       <PageHeader
         title="Kết nối kênh"
-        description="Trạng thái từng connector, nhật ký sự kiện nhận và độ trễ đồng bộ. Độ trễ đo riêng hai mốc: từ lúc nguồn phát sinh đến lúc hệ thống nhận, và từ lúc nhận đến lúc xử lý xong."
+        description="Trạng thái các kênh bán và nhắn tin, sự kiện nhận gần đây."
         actions={
           <a className="btn" href="/ket-noi/ical">
             Đối chiếu lịch iCal
@@ -84,7 +84,7 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
         </Notice>
       ) : null}
 
-      <Card title={`Connector (${connectors.length})`} pad={false}>
+      <Card title={`Kênh kết nối (${connectors.length})`} pad={false}>
         {connectors.length === 0 ? (
           <EmptyState title="Chưa khai báo connector nào" />
         ) : (
@@ -92,59 +92,45 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
             <table className="table">
               <thead>
                 <tr>
-                  <th>Kết nối</th>
+                  <th>Kênh</th>
                   <th>Trạng thái</th>
-                  <th>Năng lực</th>
-                  <th>Lần thử gần nhất</th>
-                  <th>Thành công gần nhất</th>
-                  <th>Lỗi gần nhất</th>
+                  <th>Dùng được</th>
+                  <th>Đồng bộ gần nhất</th>
                   <th className="num">Sự kiện 24h</th>
-                  <th>Nhận sự kiện</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {connectors.map((c) => {
-                  const caps = Object.entries(c.capabilities ?? {});
+                  const caps = Object.entries(c.capabilities ?? {}).filter(([, v]) => v);
                   return (
                     <tr key={c.id}>
-                      <td>
+                      <td title={c.note ?? undefined}>
                         <div className="strong">
                           {c.label} {c.status === "demo" ? <DemoBadge /> : null}
                         </div>
-                        <div className="small faint">{c.channel}</div>
-                        {c.note ? <div className="small muted">{c.note}</div> : null}
                       </td>
                       <td>
-                        <Badge tone={connectorTone(c.status)}>{c.status === "demo" ? "Demo — không phải kết nối thật" : CONNECTOR_STATUS_LABELS[c.status] ?? c.status}</Badge>
-                        {c.status === "not_configured" ? <div className="small muted">Chưa có quyền truy cập API — cần chủ hệ thống cung cấp.</div> : null}
+                        <Badge tone={connectorTone(c.status)} title={c.status === "not_configured" ? "Chưa có quyền truy cập API — cần chủ hệ thống cung cấp" : undefined}>
+                          {c.status === "demo" ? "Giả lập" : CONNECTOR_STATUS_LABELS[c.status] ?? c.status}
+                        </Badge>
+                        {c.paused ? <Badge tone="warn">Tạm dừng</Badge> : null}
                       </td>
+                      <td className="small">{caps.length ? caps.map(([k]) => CAPABILITY_LABELS[k] ?? k).join(" · ") : <span className="faint">—</span>}</td>
                       <td className="small">
-                        {caps.length === 0 ? (
-                          <span className="faint">Chưa khai báo</span>
-                        ) : (
-                          <div className="row" style={{ gap: 4 }}>
-                            {caps.map(([k, v]) => (
-                              <Badge key={k} tone={v ? "ok" : "neutral"} title={v ? "Có" : "Chưa có"}>
-                                {v ? "✓" : "✗"} {CAPABILITY_LABELS[k] ?? k}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="small">{c.last_attempt_at ? formatInstant(c.last_attempt_at, actor.timezone) : <span className="faint">Chưa có</span>}</td>
-                      <td className="small">{c.last_success_at ? formatInstant(c.last_success_at, actor.timezone) : <span className="faint">Chưa có</span>}</td>
-                      <td className="small">{c.last_error ? <span style={{ color: "var(--danger)" }}>{c.last_error}</span> : "—"}</td>
-                      <td className="num">
-                        {c.events_24h}
-                        {c.failed_24h ? <div className="small" style={{ color: "var(--danger)" }}>{c.failed_24h} lỗi</div> : null}
-                      </td>
-                      <td>
-                        {c.paused ? <Badge tone="warn">Tạm dừng</Badge> : c.status === "not_configured" ? <span className="faint small">—</span> : <Badge tone="neutral">Đang nhận</Badge>}
-                        {canPause && c.status !== "not_configured" ? (
-                          <div style={{ marginTop: 4 }}>
-                            <PauseButton connector={{ id: c.id, label: c.label, paused: c.paused }} />
+                        {c.last_success_at ? formatInstant(c.last_success_at, actor.timezone) : <span className="faint">Chưa có</span>}
+                        {c.last_error ? (
+                          <div style={{ color: "var(--danger)" }} title={c.last_error}>
+                            Lỗi gần nhất: {c.last_error.length > 60 ? `${c.last_error.slice(0, 60)}…` : c.last_error}
                           </div>
                         ) : null}
+                      </td>
+                      <td className="num">
+                        {c.events_24h || <span className="faint">0</span>}
+                        {c.failed_24h ? <div className="small" style={{ color: "var(--danger)" }}>{c.failed_24h} lỗi</div> : null}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {canPause && c.status !== "not_configured" ? <PauseButton connector={{ id: c.id, label: c.label, paused: c.paused }} /> : null}
                       </td>
                     </tr>
                   );
@@ -155,8 +141,10 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
         )}
       </Card>
 
-      {demoConnectors.length
-        ? demoConnectors.map((c) =>
+      {demoConnectors.length ? (
+        <FoldCard title="Công cụ thử với nguồn DEMO" hint="giả lập booking trùng, sai thứ tự, xung đột">
+          <div className="stack" style={{ padding: 12 }}>
+            {demoConnectors.map((c) =>
             canDemo ? (
               <DemoFeedPanel key={c.id} connector={{ id: c.id, label: c.label, paused: c.paused }} scenarios={DEMO_SCENARIO_LABELS} />
             ) : (
@@ -164,8 +152,10 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: S
                 Nguồn giả lập để thử xử lý trùng/sai thứ tự/xung đột. Cần quyền quản lý kết nối hoặc duyệt thay đổi booking để chạy.
               </Notice>
             ),
-          )
-        : null}
+          )}
+          </div>
+        </FoldCard>
+      ) : null}
 
       <div id="su-kien" />
       <Card title={`Nhật ký sự kiện nhận (${events.total})`} pad={false}>

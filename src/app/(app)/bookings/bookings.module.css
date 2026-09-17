@@ -214,3 +214,75 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Bộ lọc gọn: hàng chính + "Thêm bộ lọc" */
+.filterForm {
+  padding: 14px 16px;
+}
+.filterMain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: flex-end;
+}
+.filterMain > :global(.field) {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.filterActions {
+  display: flex;
+  gap: 8px;
+}
+.moreFilters {
+  margin-top: 10px;
+}
+.moreFilters > summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--navy-600);
+  width: max-content;
+}
+.moreFilters[open] > summary {
+  margin-bottom: 10px;
+}
+.moreFilters .checks {
+  flex: 1 1 100%;
+  flex-direction: row;
+  gap: 16px;
+}
+.note {
+  max-width: 260px;
+  margin-top: 2px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table td {
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+@media (max-width: 900px) {
+  .filterForm {
+    padding: 0;
+  }
+  .filterMain > :global(.field) {
+    flex: 1 1 calc(50% - 6px);
+  }
+  .filterActions {
+    flex: 1 1 100%;
+  }
+  .filterActions > :global(.btn) {
+    flex: 1;
+  }
+  .moreFilters .checks {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+/* Tổ chức DEMO ẩn nhãn DEMO từng dòng — khối chỉ chứa DEMO thì không chiếm chỗ */
+:global(.shell[data-demo-org="true"]) .mBadgesDemoOnly {
+  display: none;
+}

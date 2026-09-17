@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination, HelpNote } from "@/components/ui";
 import { pageParams } from "@/lib/http";
 import { requireActor } from "@/lib/session";
 import { formatInstant } from "@/lib/time";
@@ -27,7 +27,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
             Nhập Excel lịch đặt phòng <DemoBadge show={overview.orgIsDemo} />
           </>
         }
-        description="Tải file, xem trước từng dòng với giá trị gốc và lý do cần kiểm tra, rồi mới áp dụng các dòng hợp lệ. Mã lặp không bị xoá; sheet theo nhà chỉ dùng để đối chiếu."
+        description="Tải file → xem trước từng dòng → áp dụng các dòng hợp lệ."
       />
 
       {overview.units === 0 ? (

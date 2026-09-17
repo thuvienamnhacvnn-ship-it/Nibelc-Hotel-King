@@ -18,9 +18,9 @@ export function Badge({ tone = "neutral", children, title }: { tone?: Tone; chil
 export function DemoBadge({ show = true }: { show?: boolean }) {
   if (!show) return null;
   return (
-    <Badge tone="demo" title="Dữ liệu mẫu ẩn danh — không phải dữ liệu vận hành thật">
+    <span className="badge badge-demo demo-mark" title="Dữ liệu mẫu ẩn danh — không phải dữ liệu vận hành thật">
       DEMO
-    </Badge>
+    </span>
   );
 }
 
@@ -89,10 +89,12 @@ export function Notice({ tone = "info", title, children }: { tone?: "warn" | "da
   );
 }
 
-export function KeyValue({ items }: { items: [ReactNode, ReactNode][] }) {
+export function KeyValue({ items, hideEmpty = false }: { items: [ReactNode, ReactNode][]; hideEmpty?: boolean }) {
+  // hideEmpty: bỏ dòng không có giá trị để khối thông tin gọn (không hiện hàng loạt “—”).
+  const rows = hideEmpty ? items.filter(([, v]) => v !== null && v !== undefined && v !== "") : items;
   return (
     <dl className="kv">
-      {items.map(([k, v], i) => (
+      {rows.map(([k, v], i) => (
         <div key={i} style={{ display: "contents" }}>
           <dt>{k}</dt>
           <dd>{v ?? "—"}</dd>
@@ -134,5 +136,28 @@ export function Pagination({ page, pageSize, total, hrefFor }: { page: number; p
         </Link>
       ) : null}
     </div>
+  );
+}
+
+/** Khối thu gọn: phần tra cứu ít dùng (lịch sử, nhật ký kỹ thuật) — mặc định đóng để trang gọn. */
+export function FoldCard({ title, hint, children, open = false }: { title: ReactNode; hint?: ReactNode; children: ReactNode; open?: boolean }) {
+  return (
+    <details className="fold" open={open || undefined}>
+      <summary>
+        {title}
+        {hint ? <span className="fold-hint">{hint}</span> : null}
+      </summary>
+      {children}
+    </details>
+  );
+}
+
+/** Ghi chú giải thích quy tắc: gập thành một dòng "ⓘ …", bấm mới mở — thay cho khối thông báo lớn luôn hiện. */
+export function HelpNote({ title = "Cách hoạt động", children }: { title?: string; children: ReactNode }) {
+  return (
+    <details className="help-note">
+      <summary>ⓘ {title}</summary>
+      <div className="help-body">{children}</div>
+    </details>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader } from "@/components/ui";
+import { Badge, Card, FoldCard, DemoBadge, EmptyState, KeyValue, Notice, PageHeader } from "@/components/ui";
 import { AppError } from "@/lib/errors";
 import { formatMoney } from "@/lib/money";
 import { requireActor } from "@/lib/session";
@@ -100,7 +100,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             Booking {b.external_ref ?? "(không mã)"} <DemoBadge show={b.is_demo} />
           </span>
         }
-        description={`${CHANNEL_LABELS[b.source_channel] ?? b.source_channel}${b.source_account ? ` · ${b.source_account}` : ""} · phiên bản ${b.version}`}
+        description={`${CHANNEL_LABELS[b.source_channel] ?? b.source_channel}${b.source_account ? ` · ${b.source_account}` : ""} · ${formatDateVi(b.check_in_date)} → ${formatDateVi(b.check_out_date)} · ${b.nights} đêm`}
         actions={
           <>
             <Link className="btn" href="/bookings">
@@ -161,8 +161,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       <div className="grid grid-2">
         <Card title="Thông tin">
           <KeyValue
+            hideEmpty
             items={[
-              ["Trạng thái", <span key="s" className="row"><Badge tone={bookingTone(b.booking_status)}>{BOOKING_STATUS_LABELS[b.booking_status]}</Badge><Badge tone={stayTone(b.stay_status)}>{STAY_STATUS_LABELS[b.stay_status]}</Badge><Badge tone="neutral">{PAYMENT_STATUS_LABELS[b.payment_status]}</Badge></span>],
+              ["Trạng thái", <span key="s" className="row"><Badge tone={bookingTone(b.booking_status)}>{BOOKING_STATUS_LABELS[b.booking_status]}</Badge><Badge tone={stayTone(b.stay_status)}>{STAY_STATUS_LABELS[b.stay_status]}</Badge>{b.payment_status !== "unknown" ? <Badge tone="neutral">{PAYMENT_STATUS_LABELS[b.payment_status]}</Badge> : null}</span>],
               ...(showGuest
                 ? ([
                     ["Khách", b.guest_name],
@@ -181,8 +182,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               ["Ghi chú vận hành", b.ops_note ? <span key="o" style={{ whiteSpace: "pre-wrap" }}>{b.ops_note}</span> : null],
               ["Nhận booking lúc", b.booking_created_at ? formatInstant(b.booking_created_at, actor.timezone) : null],
               ["Tạo trên hệ thống", `${formatInstant(b.created_at, actor.timezone)}${b.created_by_name ? ` · ${b.created_by_name}` : ""}`],
-              ["Nguồn cập nhật lúc", b.source_updated_at ? formatInstant(b.source_updated_at, actor.timezone) : null],
-              ["Đồng bộ kênh gần nhất", b.last_synced_at ? formatInstant(b.last_synced_at, actor.timezone) : "Chưa đồng bộ từ kênh (nhập tay/Excel/DEMO)"],
+              ["Đồng bộ kênh gần nhất", b.last_synced_at ? formatInstant(b.last_synced_at, actor.timezone) : null],
             ]}
           />
         </Card>
@@ -198,10 +198,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             )}
           </Card>
 
+          {conflicts.length === 0 ? null : (
           <Card title="Xung đột tồn" pad={false}>
-            {conflicts.length === 0 ? (
-              <EmptyState title="Không có xung đột" />
-            ) : (
+            {(
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -250,6 +249,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               </div>
             )}
           </Card>
+          )}
         </div>
       </div>
 
@@ -292,10 +292,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         )}
       </Card>
 
+      {changeRequests.length === 0 ? null : (
       <Card title={`Yêu cầu thay đổi (${changeRequests.length})`} pad={false}>
-        {changeRequests.length === 0 ? (
-          <EmptyState title="Chưa có yêu cầu thay đổi" />
-        ) : (
+        {(
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -350,8 +349,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </div>
         )}
       </Card>
+      )}
 
-      <Card title={`Lịch sử thay đổi (${changes.length})`} pad={false}>
+      <FoldCard title={`Lịch sử thay đổi (${changes.length})`} hint="ai đổi gì, lúc nào">
         {changes.length === 0 ? (
           <EmptyState title="Chưa có lịch sử" />
         ) : (
@@ -404,13 +404,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             </table>
           </div>
         )}
-      </Card>
+      </FoldCard>
 
-      {tasks ? (
+      {tasks && tasks.length ? (
         <Card title={`Việc dọn liên quan (${tasks.length})`} pad={false}>
-          {tasks.length === 0 ? (
-            <EmptyState title="Chưa có việc dọn gắn với booking này" />
-          ) : (
+          {(
             <div className="table-wrap">
               <table className="table">
                 <thead>
@@ -449,7 +447,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       {audit ? (
-        <Card title="Nhật ký thao tác" pad={false}>
+        <FoldCard title="Nhật ký kỹ thuật" hint="dành cho quản trị">
           {audit.length === 0 ? (
             <EmptyState title="Chưa có nhật ký" />
           ) : (
@@ -478,7 +476,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               </table>
             </div>
           )}
-        </Card>
+        </FoldCard>
       ) : null}
     </div>
   );

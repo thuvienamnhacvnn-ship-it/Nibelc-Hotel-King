@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, Pagination, Tabs } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, Pagination, Tabs, HelpNote } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
 import { requireActor } from "@/lib/session";
 import { formatInstant, now, tzAbbrev } from "@/lib/time";
@@ -87,7 +87,7 @@ export default async function AgentCenterPage({ searchParams }: { searchParams: 
             Agent Center <DemoBadge show={!!org?.is_demo} />
           </>
         }
-        description={`Dừng/chạy tự động, xem hàng đợi thông báo, người trực, mẫu tin và việc nền. Giờ theo Budapest (${tzAbbrev(now(), actor.timezone)}). Hệ thống vẫn làm tay được khi mọi trợ lý đang dừng.`}
+        description={`Bật/dừng tự động, người trực, mẫu tin và việc nền · giờ Budapest (${tzAbbrev(now(), actor.timezone)})`}
       />
       <Tabs tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/agent-center?tab=${t.key}` }))} current={tab} />
       {!canEdit ? <Notice tone="info">Bạn chỉ có quyền xem. Thay đổi công tắc, người trực và đăng ký cần quyền dừng tự động.</Notice> : null}
@@ -145,7 +145,7 @@ async function OverviewTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
                     </td>
                     <td>
                       {s.paused ? <Badge tone="danger">Đang dừng</Badge> : <Badge tone="ok">Cho chạy</Badge>}
-                      {!s.exists && s.scope !== "org" ? <div className="small faint">Chưa bật lần nào (mặc định dừng)</div> : null}
+                      
                     </td>
                     <td className="small">
                       {s.reason ?? <span className="faint">—</span>}
@@ -193,9 +193,10 @@ async function OverviewTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
               ["Chi phí đã dùng", formatMoney(budget.cost, org?.currency ?? "EUR")],
             ]}
           />
-          <div className="small muted" style={{ marginTop: 8 }}>
-            GPU/model chưa kết nối — các con số trên là tổng từ bảng lượt chạy, hiện chưa có lượt nào dùng AI. Gửi WhatsApp nội bộ: tối đa 1 tin/phút/người (cảnh báo P0/P1 được vượt), giãn cách và trần theo giờ của số tổng đài dùng chung với hộp thư; vượt mức thì tin chờ lượt sau, không bị bỏ. Chỉ gửi tới số đã từng nhắn vào đúng số tổng đài đó.
-          </div>
+          <div className="small faint" style={{ marginTop: 8 }}>Chưa kết nối model AI — chưa phát sinh chi phí.</div>
+          <HelpNote title="Giới hạn gửi WhatsApp nội bộ">
+            Tối đa 1 tin/phút/người (cảnh báo P0/P1 được vượt), giãn cách và trần theo giờ của số tổng đài dùng chung với hộp thư; vượt mức thì tin chờ lượt sau, không bị bỏ. Chỉ gửi tới số đã từng nhắn vào đúng số tổng đài đó.
+          </HelpNote>
         </Card>
       </div>
     </>
@@ -275,10 +276,10 @@ async function ContactsTab({ actor, canEdit }: { actor: A; canEdit: boolean }) {
   const staffOpts = staff.map((s) => ({ id: s.id, label: `${s.full_name} — ${ROLE_LABELS[s.role as Role] ?? s.role}${s.duties.length ? ` (${s.duties.join(", ")})` : ""}` }));
   return (
     <>
-      <Notice tone="info">
+      <HelpNote title="Quy tắc đẩy cấp">
         Việc khẩn (P0/P1) chưa ai nhận quá hạn thì báo cấp kế tiếp của đúng mục đích; hết cấp thì báo Leader (không có Leader thì quản trị). Yêu cầu chuyển người hết cấp chuyển sang “hẹn gọi lại” — không bao giờ ghi đã kết
         nối. Hạn nhận mỗi cấp: 5 phút (đề xuất, cần đội vận hành chốt).
-      </Notice>
+      </HelpNote>
       {canEdit ? (
         <Card title="Thêm người trực">
           <AddContactForm staff={staffOpts} purposes={ESCALATION_PURPOSES.map((p) => ({ id: p, label: PURPOSE_LABELS[p] }))} />

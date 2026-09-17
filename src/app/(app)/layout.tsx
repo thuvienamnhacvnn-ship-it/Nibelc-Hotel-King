@@ -1,6 +1,6 @@
-import { DemoBadge, Badge } from "@/components/ui";
 import { navFor } from "@/components/nav";
 import { LogoutButton, Shell } from "@/components/shell";
+import { callName } from "@/lib/names";
 import { requireActor } from "@/lib/session";
 import { formatDateVi, now, todayOps, tzAbbrev, weekdayVi } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
@@ -13,30 +13,31 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const actor = await requireActor();
   const [org, bg, badges] = await Promise.all([orgInfo(actor.orgId), backgroundStatus(actor.orgId), navBadges(actor)]);
   const today = todayOps(actor.timezone);
+  const shortName = callName(actor.fullName);
   const topbar = (
     <>
       <div className="topbar-meta">
-        <span className="strong" style={{ color: "var(--navy-900)" }}>
-          {org?.name}
-        </span>
-        <DemoBadge show={!!org?.is_demo} />
+        <span className="topbar-org">{org?.name}</span>
+        {org?.is_demo ? <span className="topbar-demo" title="Dữ liệu mẫu ẩn danh — không phải dữ liệu vận hành thật">DEMO</span> : null}
+        <span className="topbar-sep" aria-hidden />
         <span>
-          {weekdayVi(today)} {formatDateVi(today)} · giờ Budapest ({tzAbbrev(now(), actor.timezone)})
+          {weekdayVi(today)} {formatDateVi(today)} · Budapest ({tzAbbrev(now(), actor.timezone)})
         </span>
-        {bg.workerAlive ? (
-          <Badge tone="ok" title="Worker nền đang chạy">
-            Worker chạy
-          </Badge>
-        ) : (
-          <Badge tone="danger" title="Không nhận nhịp từ worker trong 60 giây — việc dọn và cảnh báo sẽ chậm cập nhật">
-            Worker không chạy{bg.pending ? ` · ${bg.pending} sự kiện chờ` : ""}
-          </Badge>
-        )}
-        {bg.dead ? <Badge tone="danger">{bg.dead} sự kiện nền lỗi</Badge> : null}
       </div>
       <div className="topbar-meta">
-        <span>
-          {actor.fullName} · {actor.role ? ROLE_LABELS[actor.role] : ""}
+        <span
+          className={`topbar-health ${bg.workerAlive && !bg.dead ? "ok" : "bad"}`}
+          title={bg.workerAlive ? (bg.dead ? `${bg.dead} sự kiện nền lỗi — xem Agent Center` : "Việc nền đang chạy bình thường") : "Không nhận nhịp từ worker trong 60 giây — việc dọn và cảnh báo sẽ chậm cập nhật"}
+        >
+          {bg.workerAlive ? (bg.dead ? `${bg.dead} việc nền lỗi` : "Hệ thống ổn định") : `Việc nền không chạy${bg.pending ? ` · ${bg.pending} chờ` : ""}`}
+        </span>
+        <span className="topbar-sep" aria-hidden />
+        <span className="topbar-user" title={actor.role ? ROLE_LABELS[actor.role] : undefined}>
+          <span className="topbar-avatar">{shortName.slice(0, 1).toUpperCase()}</span>
+          <span>
+            <span className="strong">{shortName}</span>
+            <span className="topbar-role">{actor.role ? ROLE_LABELS[actor.role] : ""}</span>
+          </span>
         </span>
         <LogoutButton />
       </div>

@@ -16,25 +16,25 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Vận hành",
     items: [
-      { href: "/", label: "Tổng quan hôm nay", icon: "LayoutDashboard", any: ["booking.view", "cleaning.view_all"] },
+      { href: "/", label: "Tổng quan", icon: "LayoutDashboard", any: ["booking.view", "cleaning.view_all"] },
       { href: "/bookings", label: "Booking", icon: "BookOpen", any: ["booking.view"] },
       { href: "/lich", label: "Lịch phòng", icon: "CalendarDays", any: ["calendar.view"] },
-      { href: "/duyet", label: "Chờ duyệt & xung đột", icon: "ShieldCheck", any: ["booking.request_change", "conflict.resolve", "booking.view"] },
-      { href: "/hop-thu", label: "Hộp thư & tổng đài", icon: "MessagesSquare", any: ["inbox.view"] },
+      { href: "/duyet", label: "Duyệt & xung đột", icon: "ShieldCheck", any: ["booking.request_change", "conflict.resolve", "booking.view"] },
+      { href: "/hop-thu", label: "Hộp thư", icon: "MessagesSquare", any: ["inbox.view"] },
       { href: "/kho-qa", label: "Kho Q&A", icon: "LibraryBig", any: ["qa.view"] },
     ],
   },
   {
-    group: "Budapest",
+    group: "Buồng phòng",
     items: [
-      { href: "/cleaning", label: "Điều phối cleaning", icon: "Sparkles", any: ["cleaning.view_all"] },
-      { href: "/m", label: "Việc của tôi (mobile)", icon: "Smartphone", any: ["cleaning.own"] },
+      { href: "/cleaning", label: "Dọn phòng", icon: "Sparkles", any: ["cleaning.view_all"] },
+      { href: "/m", label: "Việc của tôi", icon: "Smartphone", any: ["cleaning.own"] },
     ],
   },
   {
     group: "Dữ liệu",
     items: [
-      { href: "/danh-muc", label: "Nhà / phòng / listing", icon: "Building2", any: ["catalog.view"] },
+      { href: "/danh-muc", label: "Nhà & phòng", icon: "Building2", any: ["catalog.view"] },
       { href: "/nhap-excel", label: "Nhập Excel", icon: "FileSpreadsheet", any: ["import.preview"] },
       { href: "/ket-noi", label: "Kết nối kênh", icon: "PlugZap", any: ["connector.view"] },
       { href: "/nhat-ky", label: "Nhật ký", icon: "History", any: ["audit.view"] },
@@ -43,7 +43,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Quản lý",
     items: [
-      { href: "/bao-cao", label: "Báo cáo ngày", icon: "FileBarChart", any: ["reports.view"] },
+      { href: "/bao-cao", label: "Báo cáo", icon: "FileBarChart", any: ["reports.view"] },
       { href: "/agent-center", label: "Agent Center", icon: "Bot", any: ["automation.pause", "reports.view"] },
     ],
   },

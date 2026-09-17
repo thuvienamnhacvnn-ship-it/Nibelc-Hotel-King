@@ -56,7 +56,7 @@ export default async function CleaningTaskPage({ params }: { params: Promise<{ i
             <DemoBadge show={t.is_demo} />
           </span>
         }
-        description={`${t.unit_name} · ${t.property_code} — ${t.property_name}. Giờ hiển thị theo Budapest. Cập nhật ${formatInstant(now(), tz)}.`}
+        description={`${t.unit_name} · ${t.property_name} · giờ Budapest`}
       />
 
       {t.change_ack_required && pending ? (

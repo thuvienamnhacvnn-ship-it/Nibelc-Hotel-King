@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Pagination, HelpNote } from "@/components/ui";
 import { pageParams } from "@/lib/http";
 import { requireActor } from "@/lib/session";
 import { formatDateVi, todayOps } from "@/lib/time";
@@ -46,16 +46,16 @@ export default async function QaPage({ searchParams }: { searchParams: Promise<R
     <div className="stack">
       <PageHeader
         title="Kho Q&A"
-        description={`Câu trả lời đã duyệt cho trợ lý khách, theo phạm vi chung / nhà / phòng. ${counts.approved ?? 0} đã duyệt · ${counts.pending_review ?? 0} chờ duyệt · ${counts.draft ?? 0} nháp · ${counts.retired ?? 0} ngưng dùng.`}
+        description={`Câu trả lời cho trợ lý khách · ${counts.approved ?? 0} đã duyệt · ${counts.pending_review ?? 0} chờ duyệt · ${counts.draft ?? 0} nháp · ${counts.retired ?? 0} ngưng dùng.`}
         actions={canEdit ? <CreateQaButton units={unitOpts} properties={properties} topics={topics} /> : null}
       />
 
-      <Notice tone="warn" title="Nội dung FAQ/nội quy chưa được nhập">
-        Các link Google Docs FAQ và nội quy nhà trong đặc tả CHƯA được đưa vào kho — hệ thống không đọc link Google Docs. Cần xuất nội dung thành file (docx/txt) rồi nhập hoặc gõ vào từng mục. Không có câu đã duyệt thì bot chuyển người, không đoán.
+      <Notice tone="warn" title="Chưa nhập FAQ/nội quy nhà">
+        Gõ vào từng mục hoặc gửi file docx/txt để nhập. Câu nào chưa có bản duyệt thì bot chuyển người, không đoán.
       </Notice>
-      <Notice tone="info">
+      <HelpNote title="Quy tắc kho Q&A">
         Không lưu mã cửa, mã hộp khoá hay mật khẩu trong Q&A (hệ thống từ chối nội dung giống mã). Sửa câu đã duyệt tạo phiên bản mới; bản cũ vẫn chạy tới khi bản mới được duyệt. Người soạn không tự duyệt.
-      </Notice>
+      </HelpNote>
 
       <Card title="Thử câu hỏi (trước khi bật bot)">
         <TryQuestion units={unitOpts} today={todayOps(actor.timezone)} />

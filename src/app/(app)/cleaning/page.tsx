@@ -61,8 +61,8 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
   return (
     <div className="stack">
       <PageHeader
-        title="Điều phối cleaning"
-        description={`Ngày vận hành ${weekdayVi(date)} ${formatDateVi(date)} · giờ Budapest (${dayTz}). ${date === today ? "Hôm nay — gồm cả việc ngày trước còn mở." : ""}`}
+        title="Dọn phòng"
+        description={`${weekdayVi(date)} ${formatDateVi(date)}${date === today ? " · hôm nay (gồm việc tồn từ trước)" : ""} · giờ Budapest (${dayTz})`}
         actions={
           <>
             <Link className="btn" href={qs(addDays(date, -1))}>
@@ -133,8 +133,22 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
         </Notice>
       ) : null}
 
-      <Notice tone="info">Ảnh bằng chứng và nhận xét AI: Đợt 2. Hiện tại kiểm phòng dựa trên checklist và kiểm tra thực tế.</Notice>
+      <div className={styles.summaryBar}>
+        <span className={styles.summaryChip}>
+          <strong>{openTasks.length}</strong> việc
+        </span>
+        <span className={styles.summaryChip}>
+          <strong>{unassigned.length}</strong> chưa giao
+        </span>
+        <span className={styles.summaryChip}>
+          <strong>{inspection.length}</strong> chờ kiểm
+        </span>
+        <span className={styles.summaryChip}>
+          <strong>{incidents.length}</strong> sự cố
+        </span>
+      </div>
 
+      {inspection.length || incidents.length ? (
       <div className="grid grid-2">
         <Card title={`Chờ kiểm (${inspection.length})`} pad={false}>
           {inspection.length === 0 ? (
@@ -191,19 +205,20 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
           )}
         </Card>
       </div>
+      ) : null}
 
       {tasks.length === 0 ? (
         <Card>
           <EmptyState title={`Không có việc dọn ngày ${formatDateVi(date)}${status || property ? " với bộ lọc này" : ""}`}>
-            Việc dọn được lập tự động từ booking (khách trả phòng). Không có việc nghĩa là không có lượt trả phòng trong dữ liệu hiện có.
+            Việc dọn tự lập từ lượt trả phòng của booking.
           </EmptyState>
         </Card>
       ) : (
         <div className={styles.board}>
-          <section className={`${styles.column} ${styles.unassigned}`}>
+          <section className={`${styles.column} ${unassigned.length ? styles.unassigned : ""}`}>
             <div className={styles.columnHead}>
               <h2>Chưa phân công ({unassigned.length})</h2>
-              <span className="small">{unassigned.length ? (available.length ? `${available.length} cleaner có ca và còn chỗ` : "Chưa được phủ — không cleaner khả dụng") : "Đã giao hết"}</span>
+              <span className="small">{unassigned.length ? (available.length ? `${available.length} người còn nhận được việc` : "Không còn người khả dụng") : "Đã giao hết"}</span>
             </div>
             {unassigned.length ? unassigned.map((t) => <TaskCard key={t.id} task={t} tz={tz} today={today} perms={perms} />) : <div className="small muted">Không có việc chờ giao.</div>}
           </section>
@@ -217,11 +232,11 @@ export default async function CleaningBoardPage({ searchParams }: { searchParams
                     <h2>{c.full_name}</h2>
                     <DemoBadge show={c.is_demo} />
                   </div>
-                  <div className="row small" style={{ gap: 6, flexWrap: "wrap" }}>
-                    {c.shifts.length ? <Badge tone="ok">Ca {c.shifts.join(", ")}</Badge> : <Badge tone="warn">Không có ca</Badge>}
-                    <Badge tone={full ? "danger" : "neutral"}>
-                      {c.tasks_that_day}/{c.max_tasks_per_day} việc trong ngày
-                    </Badge>
+                  <div className="small faint">
+                    {c.shifts.length ? `Ca ${c.shifts.join(", ")}` : <span style={{ color: "var(--warn)" }}>Không có ca</span>} ·{" "}
+                    <span style={full ? { color: "var(--danger)", fontWeight: 700 } : undefined}>
+                      {c.tasks_that_day}/{c.max_tasks_per_day} việc
+                    </span>
                   </div>
                 </div>
                 {mine.length ? mine.map((t) => <TaskCard key={t.id} task={t} tz={tz} today={today} perms={perms} />) : <div className="small muted">Chưa có việc.</div>}

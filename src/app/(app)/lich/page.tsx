@@ -40,8 +40,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
         title="Lịch phòng"
         description={
           <>
-            Mỗi ô là một đêm, ngày theo giờ Budapest (<strong>{data.timezoneLabel}</strong>). Nguyên căn và phòng lẻ dùng chung phòng vật lý nên chặn lẫn nhau. Đổi lịch booking:
-            mở booking rồi tạo yêu cầu thay đổi — lịch không kéo-thả.
+            Mỗi ô là một đêm, giờ Budapest ({data.timezoneLabel}). Muốn đổi lịch: mở booking → tạo yêu cầu thay đổi.
           </>
         }
         actions={canBlock ? <CreateBlockButton units={units} defaultStart={params.start} /> : null}
@@ -196,7 +195,8 @@ function Legend() {
       <span className={`${s.chip} ${s.chipBlock}`}>
         <Ban size={12} /> Chặn tồn
       </span>
-      <span className={s.indirect}>bị chặn bởi X = phòng dùng chung đang bị chiếm</span>
+      <span className={`${s.indirect} ${s.legendHatch}`} aria-hidden />
+      <span>Phòng dùng chung đang bận</span>
     </div>
   );
 }
@@ -289,7 +289,6 @@ function Cell({ items }: { items: CellItem[] }) {
                     <span className={s.chipSub}>
                       {CHANNEL_LABELS[a.source_channel] ?? a.source_channel}
                       {a.guests != null ? ` · ${a.guests}k` : ""}
-                      {a.is_demo ? " · DEMO" : ""}
                     </span>
                     {a.guest_name ? <span className={s.chipSub}>{a.guest_name}</span> : null}
                   </span>
@@ -309,13 +308,15 @@ function Cell({ items }: { items: CellItem[] }) {
           }
           return null;
         })}
-      {indirect.map((i) =>
-        i.type === "indirect" ? (
-          <span key={i.byUnitCode} className={s.indirect} title={`Phòng dùng chung đang bị chiếm bởi ${i.byUnitCode} (${i.label})`}>
-            bị chặn bởi {i.byUnitCode}
-          </span>
-        ) : null,
-      )}
+      {indirect.length ? (
+        // Nguyên căn/phòng lẻ dùng chung phòng vật lý: ô gạch chéo nhạt, rê chuột xem phòng nào đang chiếm.
+        <span
+          className={s.indirect}
+          title={indirect.map((i) => (i.type === "indirect" ? `Phòng dùng chung đang bận bởi ${i.byUnitCode} (${i.label})` : "")).filter(Boolean).join(" · ")}
+        >
+          {indirect.map((i) => (i.type === "indirect" ? i.byUnitCode : "")).filter(Boolean).join(", ")}
+        </span>
+      ) : null}
     </div>
   );
 }

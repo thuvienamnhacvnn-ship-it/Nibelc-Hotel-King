@@ -1,4 +1,4 @@
-import { Badge, EmptyState, Notice } from "@/components/ui";
+import { Badge, EmptyState, Notice, HelpNote } from "@/components/ui";
 import { formatInstant } from "@/lib/time";
 import type { ChecklistItemRow } from "@/modules/cleaning/queries";
 import type { RuleItem } from "@/modules/photos/qc";
@@ -46,6 +46,9 @@ export function EvidenceSection({
   const ruleByItem = new Map(rules.items.map((r) => [r.itemId, r]));
   const aiByKey = new Map((lastAi?.status === "completed" ? lastAi.items : []).map((i) => [i.itemKey, i]));
   const rows = checklist.filter((c) => c.requires_photo || photos.some((p) => p.checklistItemId === c.id));
+  // Mục chưa có ảnh và chưa có nhận xét AI: gom một dòng thay vì lặp từng khối "Chưa có ảnh".
+  const missing = rows.filter((c) => !photos.some((p) => p.checklistItemId === c.id) && !aiByKey.has(c.item_key) && !ruleByItem.get(c.id)?.needsPhysicalCheck);
+  const detailed = rows.filter((c) => !missing.includes(c));
   const loose = photos.filter((p) => !p.checklistItemId || !checklist.some((c) => c.id === p.checklistItemId));
 
   return (
@@ -56,16 +59,25 @@ export function EvidenceSection({
         <span className="spacer" />
         {canReview ? <RerunReviewButton taskId={taskId} /> : null}
       </div>
-      <div className="small muted">
+      <HelpNote title="Ảnh được kiểm thế nào">
         Luật chỉ kiểm có ảnh hay không và cờ cảnh báo; AI chỉ gợi ý. Mùi, vi sinh, độ khô, thiết bị hoạt động không kết luận được từ ảnh. Budapest Team quyết định
         đạt / cần dọn lại.
         {lastRules ? ` Lần ghi kết quả luật gần nhất: ${formatInstant(lastRules.createdAt, tz)}.` : ""}
         {lastAi ? ` Lượt AI gần nhất: ${formatInstant(lastAi.createdAt, tz)}.` : ""}
-      </div>
+      </HelpNote>
+
+      {missing.length ? (
+        <div className={styles.item}>
+          <div className="small" style={{ color: "var(--danger)", fontWeight: 700 }}>
+            Chưa có ảnh cho {missing.length} mục
+          </div>
+          <div className="small muted">{missing.map((c) => c.label).join(" · ")}</div>
+        </div>
+      ) : null}
 
       {rows.length === 0 && loose.length === 0 ? <EmptyState title="Việc này chưa có ảnh và không có mục bắt buộc chụp ảnh" /> : null}
 
-      {rows.map((c) => {
+      {detailed.map((c) => {
         const rule = ruleByItem.get(c.id);
         const ai = aiByKey.get(c.item_key);
         const own = photos.filter((p) => p.checklistItemId === c.id);

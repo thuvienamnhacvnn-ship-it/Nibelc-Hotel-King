@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, Stat } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, Stat, HelpNote } from "@/components/ui";
 import { isUuid } from "@/lib/http";
 import { requireActor } from "@/lib/session";
 import { formatDateVi, formatInstant, localTimeOf, now, todayOps, tzAbbrev } from "@/lib/time";
@@ -48,7 +48,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: SP }
             Báo cáo ngày <DemoBadge show={!!org?.is_demo} />
           </>
         }
-        description={`Agent Manager lập cho Ngọc và Dịu. Mọi số liệu tính bằng truy vấn trên dữ liệu trong hệ thống; phần diễn giải sinh từ chính các số đó. Giờ theo Europe/Budapest (${tzAbbrev(now(), actor.timezone)}).`}
+        description={`Báo cáo đầu/cuối ngày cho quản lý · số liệu lấy trực tiếp từ hệ thống · giờ Budapest (${tzAbbrev(now(), actor.timezone)})`}
       />
 
       <Card title="Lập báo cáo">
@@ -128,7 +128,7 @@ function ReportView({ report, timezone }: { report: NonNullable<Awaited<ReturnTy
               {staleConnectors.map((c) => c.label).join(", ")} đang lỗi hoặc không đồng bộ thành công quá {STALE_SYNC_HOURS} giờ. <Link href="/ket-noi">Xem kết nối</Link>
             </Notice>
           ) : null}
-          {report.kind === "morning" ? <Notice tone="info">Báo cáo đầu ngày là lịch theo booking — không chứng minh khách đã đến hay đã rời.</Notice> : null}
+          {report.kind === "morning" ? <div className="small faint">Báo cáo đầu ngày là lịch theo booking — chưa chứng minh khách đã đến hay đã rời.</div> : null}
         </div>
       </Card>
 

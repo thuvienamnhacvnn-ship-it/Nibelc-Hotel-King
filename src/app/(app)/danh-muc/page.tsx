@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, KeyValue, Notice, PageHeader, HelpNote } from "@/components/ui";
 import { requireActor } from "@/lib/session";
 import { formatInstant, hhmm } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
@@ -35,13 +35,13 @@ export default async function CatalogPage() {
   return (
     <div className="stack">
       <PageHeader
-        title="Nhà / phòng / listing"
-        description={`${data.counts.properties} nhà · ${data.counts.resources} phòng vật lý · ${data.counts.units} sản phẩm bán · ${data.counts.listings} listing. Mã chuẩn là mã trong file Vietnam Team; tồn phòng tính trên phòng vật lý.`}
+        title="Nhà & phòng"
+        description={`${data.counts.properties} nhà · ${data.counts.resources} phòng vật lý · ${data.counts.units} sản phẩm bán · ${data.counts.listings} listing`}
       />
-      <Notice tone="info">
-        Quan hệ nguyên căn ↔ phòng lẻ (sản phẩm gồm những phòng vật lý nào) không sửa được ở màn hình này: đổi quan hệ làm lệch tồn đã giữ nên cần migration/công cụ riêng có kiểm tra.
+      <HelpNote title="Sửa được gì ở đây">
+        Mã chuẩn là mã trong file Vietnam Team; tồn phòng tính trên phòng vật lý. Quan hệ nguyên căn ↔ phòng lẻ (sản phẩm gồm những phòng vật lý nào) không sửa được ở màn hình này: đổi quan hệ làm lệch tồn đã giữ nên cần migration/công cụ riêng có kiểm tra.
         {canEdit ? " Bạn sửa được trạng thái dữ liệu, ghi chú, sức chứa, hoạt động, thời lượng dọn và trạng thái listing — mọi thay đổi ghi nhật ký." : null}
-      </Notice>
+      </HelpNote>
 
       {data.properties.length ? (
         <nav className="row small">

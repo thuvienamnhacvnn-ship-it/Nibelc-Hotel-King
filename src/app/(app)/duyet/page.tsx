@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader } from "@/components/ui";
+import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, HelpNote } from "@/components/ui";
 import { requireActor } from "@/lib/session";
 import { formatDateVi, formatInstant } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
@@ -21,12 +21,12 @@ export default async function ApprovalQueuePage() {
   return (
     <div className="stack">
       <PageHeader
-        title="Chờ duyệt & xung đột"
-        description="Yêu cầu đổi ngày/phòng/số khách/hủy chỉ thay đổi booking khi người có quyền áp dụng. Xung đột tồn cần người xử lý."
+        title="Duyệt & xung đột"
+        description="Thay đổi booking chờ người có quyền duyệt và các xung đột lịch cần xử lý."
       />
-      <Notice tone="info" title="Hệ thống không tự hủy booking của khách">
+      <HelpNote title="Hệ thống không tự hủy booking của khách">
         Khi hai nguồn cùng bán một đêm, cả hai booking được giữ lại và đánh dấu xung đột. Người vận hành quyết định cách xử lý (đổi phòng bằng yêu cầu thay đổi, liên hệ kênh) rồi ghi nhận ở đây.
-      </Notice>
+      </HelpNote>
       {!canApprove && !canResolve ? <Notice tone="warn">Bạn chỉ có quyền xem hàng chờ này.</Notice> : null}
 
       <Card title={`Xung đột tồn đang mở (${conflicts.length})`} pad={false}>

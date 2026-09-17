@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Dialog, ErrorText, callApi, useAction, type ApiError } from "@/components/client";
+import { Dialog, ErrorText, MoreMenu, callApi, useAction, type ApiError } from "@/components/client";
 
 /** Hành động điều phối / kiểm phòng trên một việc dọn. Mọi nút gọi API thật; server kiểm quyền lần nữa. */
 
@@ -67,20 +67,24 @@ export function TaskActions({ task, perms, size = "sm" }: { task: ActionTask; pe
           {task.assigneeName ? "Đổi người" : "Giao việc"}
         </button>
       ) : null}
-      {canVacate ? (
-        <button type="button" className={btn} onClick={() => setOpen("vacated")}>
-          Xác nhận khách đã rời
-        </button>
-      ) : null}
-      {canUnassign ? (
-        <button type="button" className={btn} onClick={() => setOpen("unassign")}>
-          Bỏ giao
-        </button>
-      ) : null}
-      {canCancel ? (
-        <button type="button" className={`${btn} btn-danger`} onClick={() => setOpen("cancel")}>
-          Hủy việc
-        </button>
+      {canVacate || canUnassign || canCancel ? (
+        <MoreMenu>
+          {canVacate ? (
+            <button type="button" className="menu-item" onClick={() => setOpen("vacated")}>
+              Xác nhận khách đã rời
+            </button>
+          ) : null}
+          {canUnassign ? (
+            <button type="button" className="menu-item" onClick={() => setOpen("unassign")}>
+              Bỏ giao
+            </button>
+          ) : null}
+          {canCancel ? (
+            <button type="button" className="menu-item danger" onClick={() => setOpen("cancel")}>
+              Hủy việc
+            </button>
+          ) : null}
+        </MoreMenu>
       ) : null}
 
       {open === "assign" ? <AssignDialog task={task} onClose={close} /> : null}
@@ -374,7 +378,7 @@ function InspectDialog({ task, onClose }: { task: ActionTask; onClose: () => voi
           <label htmlFor="inspect-note">{needNote ? "Hạng mục cần dọn lại (bắt buộc)" : "Ghi chú (không bắt buộc)"}</label>
           <textarea id="inspect-note" className="textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
           <div className="hint">
-            Đạt chỉ được duyệt khi checklist đủ và không còn sự cố chặn nhận khách — server sẽ từ chối nếu thiếu. Ảnh bằng chứng và nhận xét AI: Đợt 2.
+            Đạt chỉ được duyệt khi checklist đủ và không còn sự cố chặn nhận khách — server sẽ từ chối nếu thiếu.
           </div>
         </div>
         <ErrorText error={error} />

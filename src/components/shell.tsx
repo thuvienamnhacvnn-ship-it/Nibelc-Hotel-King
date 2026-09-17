@@ -117,7 +117,7 @@ export function Shell({ nav, topbar, mobile, children }: { nav: ShellNavGroup[];
   }, [sheet]);
 
   return (
-    <div className="shell">
+    <div className="shell" data-demo-org={mobile.isDemo ? "true" : undefined}>
       <aside className="sidebar" aria-label="Điều hướng chính">
         <Link href="/" className="brand" aria-label="Vietduc Hotel — về trang chính">
           {/* Logo Việt Đức Group nền trong suốt, đặt thẳng trên menu */}

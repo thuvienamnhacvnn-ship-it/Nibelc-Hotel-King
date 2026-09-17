@@ -158,3 +158,52 @@
     border-bottom-left-radius: 4px;
   }
 }
+
+/* Dải trạng thái kênh gọn (17/09) */
+.statusBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+}
+.statusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+}
+.statusWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--warn);
+}
+.statusWarn::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d99a1e;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.dotOk {
+  background: #22a55b;
+}
+.dotBad {
+  background: var(--danger);
+}
+.dotIdle {
+  background: #b9c4d1;
+}

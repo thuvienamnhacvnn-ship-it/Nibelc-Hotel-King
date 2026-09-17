@@ -40,10 +40,11 @@
   box-shadow: var(--shadow);
 }
 .turnover {
-  border-left-color: var(--danger);
+  border-left-color: #d99a1e;
 }
 .overdue {
-  background: var(--danger-bg);
+  border-left-color: var(--danger);
+  background: #fffafa;
 }
 .unit {
   font-weight: 800;
@@ -128,4 +129,50 @@
     flex-wrap: wrap;
     padding: 12px 14px;
   }
+}
+
+/* Thẻ việc gọn (17/09) */
+.taskHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.taskName {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.taskTimes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-size: 13.5px;
+}
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.summaryBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.summaryChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.summaryChip strong {
+  color: var(--navy-900);
 }

@@ -86,41 +86,32 @@ export default async function InboxPage({ searchParams }: { searchParams: SP }) 
     <div className={`stack ${styles.page}`} data-selected={selectedId ? "true" : "false"}>
       <PageHeader
         title="Hộp thư & tổng đài"
-        description="Tin WhatsApp của khách, nhân viên và nhóm. Bot chỉ soạn nháp từ Q&A đã duyệt; mã cửa, hoàn tiền, sự cố hoặc không có căn cứ thì chuyển người. Trạng thái gửi là kết quả thật từ kênh."
+        description="Tin nhắn của khách, nhân viên và nhóm. Bot chỉ soạn nháp từ Q&A đã duyệt."
       />
 
-      <div className={`row ${styles.connectors}`} style={{ gap: 8, flexWrap: "wrap" }}>
+      <div className={styles.statusBar}>
         {connectors.length === 0 ? (
-          <Notice tone="warn" title="Chưa có connector nhắn tin nào">
-            Tạo connector tổng đài bằng <span className="mono">scripts/seed-whatsapp-connector.ts</span>. Chưa có connector thì không nhận được tin.
-          </Notice>
+          <span className={styles.statusWarn}>Chưa có kênh nhắn tin nào</span>
         ) : (
           connectors.map((c) => (
-            <div key={c.id} className={`card ${styles.connector}`}>
-              <div className="strong small">
-                {c.label} {c.status === "demo" ? <DemoBadge /> : null}
-              </div>
-              <div className="row" style={{ gap: 4 }}>
-                <Badge tone={connectorTone(c.status)}>{c.status === "demo" ? "Demo — không gửi/nhận thật" : CONNECTOR_STATUS_LABELS[c.status] ?? c.status}</Badge>
-                {c.paused ? <Badge tone="warn">Tạm dừng</Badge> : null}
-                {c.status !== "demo" ? <Badge tone={c.webhook_ready ? "info" : "neutral"}>{c.webhook_ready ? "Có token webhook" : "Chưa có token webhook"}</Badge> : null}
-              </div>
-              <div className="small faint">Tin vào gần nhất: {c.last_inbound_at ? formatInstant(c.last_inbound_at, actor.timezone) : "chưa có"}</div>
-            </div>
+            <span key={c.id} className={styles.statusItem} title={`Tin vào gần nhất: ${c.last_inbound_at ? formatInstant(c.last_inbound_at, actor.timezone) : "chưa có"}`}>
+              <span className={`${styles.dot} ${c.status === "active" && !c.paused ? styles.dotOk : c.status === "error" ? styles.dotBad : styles.dotIdle}`} />
+              {c.label}
+              <span className="faint">
+                {c.paused ? "tạm dừng" : c.status === "demo" ? "demo" : (CONNECTOR_STATUS_LABELS[c.status] ?? c.status).toLowerCase()}
+              </span>
+            </span>
           ))
         )}
+        <span className="spacer" />
+        {!sendingOpen ? (
+          <Link href="/agent-center" className={styles.statusWarn} title="Tin trả lời và nháp đã duyệt sẽ ghi “Gửi thất bại” kèm lý do cho tới khi bật ở Agent Center">
+            Gửi tin cho khách đang dừng
+          </Link>
+        ) : !botAutoSend ? (
+          <span className={styles.statusItem}>Bot chỉ soạn nháp, chờ người duyệt</span>
+        ) : null}
       </div>
-
-      {!sendingOpen ? (
-        <Notice tone="warn" title="Gửi tin cho khách đang DỪNG">
-          {switches.org.paused ? `Toàn bộ tự động của tổ chức đang dừng${switches.org.reason ? `: ${switches.org.reason}` : ""}. ` : ""}
-          Kênh “whatsapp_guest” {switches.whatsappGuest.configured ? "đang dừng" : "chưa được bật (mặc định dừng)"}. Tin trả lời và nháp đã duyệt sẽ ghi “Gửi thất bại” kèm lý do cho tới khi bật ở Agent Center.
-        </Notice>
-      ) : !botAutoSend ? (
-        <Notice tone="info" title="Bot chỉ soạn nháp">
-          Trợ lý khách (agent guest) chưa được bật tự gửi — mọi câu trả lời của bot chờ người duyệt.
-        </Notice>
-      ) : null}
 
       {worker.queued > 0 && !worker.alive ? (
         <Notice tone="danger" title={`${worker.queued} tin đang chờ gửi nhưng worker không chạy`}>
@@ -182,21 +173,21 @@ export default async function InboxPage({ searchParams }: { searchParams: SP }) 
                       </span>
                       {c.unread_count > 0 ? <Badge tone="info">{c.unread_count} mới</Badge> : null}
                     </div>
-                    <div className="row small" style={{ gap: 4, flexWrap: "wrap" }}>
-                      <Badge tone="neutral">{KIND_LABELS[c.kind] ?? c.kind}</Badge>
-                      {c.kind === "guest" ? <Badge tone={c.handled_by === "bot" ? "info" : "ok"}>{c.handled_by === "bot" ? "Bot đang nháp" : "Người đang tiếp quản"}</Badge> : null}
-                      {c.open_handoffs ? <Badge tone="danger">Chờ người nhận</Badge> : null}
-                      {c.drafts ? <Badge tone="warn">{c.drafts} nháp</Badge> : null}
-                      {c.failed ? <Badge tone="danger">{c.failed} gửi lỗi</Badge> : null}
-                      {c.booking_ref ? <Badge tone="ok">{c.booking_ref}</Badge> : null}
-                    </div>
+                    {c.open_handoffs || c.drafts || c.failed ? (
+                      <div className="row small" style={{ gap: 4, flexWrap: "wrap" }}>
+                        {c.open_handoffs ? <Badge tone="danger">Chờ người nhận</Badge> : null}
+                        {c.failed ? <Badge tone="danger">{c.failed} gửi lỗi</Badge> : null}
+                        {c.drafts ? <Badge tone="warn">{c.drafts} nháp chờ duyệt</Badge> : null}
+                      </div>
+                    ) : null}
                     <div className="small muted">
                       {c.last_direction === "out" ? "↩ " : ""}
                       {c.last_body ?? <span className="faint">(không có chữ)</span>}
                     </div>
                     <div className="small faint">
-                      {INBOX_CHANNEL_LABELS[c.channel] ?? c.channel}
-                      {c.connector_label ? ` · ${c.connector_label}` : ""} · {c.last_message_at ? formatInstant(c.last_message_at, actor.timezone) : "—"}
+                      {KIND_LABELS[c.kind] ?? c.kind} · {INBOX_CHANNEL_LABELS[c.channel] ?? c.channel}
+                      {c.booking_ref ? ` · ${c.booking_ref}` : ""}
+                      {c.kind === "guest" && c.handled_by !== "bot" ? " · người đang tiếp quản" : ""} · {c.last_message_at ? formatInstant(c.last_message_at, actor.timezone) : "—"}
                     </div>
                   </Link>
                 </li>

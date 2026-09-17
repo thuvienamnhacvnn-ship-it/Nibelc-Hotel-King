@@ -155,3 +155,34 @@ export function FilterPanel({ active = 0, children, label = "Bộ lọc & tìm k
     </div>
   );
 }
+
+/** Nút "⋯" mở menu thao tác phụ — giữ thẻ gọn, chỉ để nút chính nằm ngoài. Đóng khi bấm ra ngoài hoặc chọn mục. */
+export function MoreMenu({ children, label = "Thao tác khác" }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div className="more-menu" ref={ref}>
+      <button type="button" className="btn btn-sm more-trigger" aria-label={label} title={label} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        ⋯
+      </button>
+      {open ? (
+        <div className="menu-pop" role="menu" onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}

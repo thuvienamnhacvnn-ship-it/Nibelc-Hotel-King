@@ -1,17 +1,20 @@
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Badge, Card, DemoBadge, EmptyState, Notice, PageHeader, Stat } from "@/components/ui";
+import type { ReactNode } from "react";
+import { Badge, Card, DemoBadge, PageHeader, Stat } from "@/components/ui";
+import { callName } from "@/lib/names";
 import { requireActor } from "@/lib/session";
-import { formatDateVi, formatInstant, todayOps, weekdayVi } from "@/lib/time";
+import { formatDateVi, todayOps, weekdayVi } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
 import { CHANNEL_LABELS, STAY_STATUS_LABELS } from "@/modules/booking/types";
 import { READINESS_LABELS, type ReadinessStatus } from "@/modules/cleaning/readiness";
-import { TASK_STATUS_LABELS } from "@/modules/cleaning/service";
 import { todayOverview } from "@/modules/overview/queries";
-import { CONNECTOR_STATUS_LABELS, connectorTone } from "@/modules/connectors/labels";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Tổng quan hôm nay" };
+export const metadata = { title: "Tổng quan" };
+
+type Movement = Awaited<ReturnType<typeof todayOverview>>["arrivals"][number];
 
 export default async function TodayPage() {
   const actor = await requireActor();
@@ -20,10 +23,26 @@ export default async function TodayPage() {
   const date = todayOps(actor.timezone);
   const data = await todayOverview(actor, date);
   const showGuest = can(actor, "booking.view_guest_contact");
+  const canBooking = can(actor, "booking.view");
+  const canCleaning = can(actor, "cleaning.view_all");
 
-  // "Dịu — Vietnam team" → "Dịu" (tên gọi tiếng Việt là từ cuối)
-  const firstName = (actor.fullName.split(/\s+[—-]\s+/)[0] ?? actor.fullName).trim().split(/\s+/).pop();
-  const alerts = data.pending.conflicts + data.tasks.overdue + data.notReady.length;
+  const firstName = callName(actor.fullName);
+  const units = (codes: string[]) => (codes.length > 4 ? `${codes.slice(0, 4).join(", ")} +${codes.length - 4}` : codes.join(", "));
+
+  // Việc cần xử lý: chỉ hiện mục có số > 0, xếp theo mức khẩn.
+  const todos: { key: string; count: number; label: string; sub?: string; href?: string; tone: "danger" | "warn" | "neutral" }[] = [
+    { key: "conflicts", count: data.pending.conflicts, label: "Xung đột lịch đang mở", sub: "Kênh bán nhận booking trùng đêm", href: canBooking ? "/duyet" : undefined, tone: "danger" as const },
+    { key: "overdue", count: data.tasks.overdue, label: "Việc dọn quá hạn", sub: units(data.overdueTasks.map((t) => t.unit_code)), href: canCleaning ? "/cleaning" : undefined, tone: "danger" as const },
+    { key: "notReady", count: data.notReady.length, label: "Khách đến nhưng phòng chưa sẵn sàng", sub: units(data.notReady.map((r) => r.unit_code)), href: canCleaning ? "/cleaning" : undefined, tone: "warn" as const },
+    { key: "incidents", count: data.pending.incidents, label: "Sự cố phòng chưa xử lý", href: canCleaning ? "/cleaning" : undefined, tone: "warn" as const },
+    { key: "unassigned", count: data.tasks.unassigned, label: "Việc dọn chưa phân công", href: canCleaning ? "/cleaning" : undefined, tone: "warn" as const },
+    { key: "changes", count: data.pending.change_requests, label: "Thay đổi booking chờ duyệt", href: canBooking ? "/duyet" : undefined, tone: "neutral" as const },
+    { key: "inspect", count: data.tasks.awaiting_inspection, label: "Phòng chờ kiểm", href: canCleaning ? "/cleaning" : undefined, tone: "neutral" as const },
+    { key: "ack", count: data.tasks.needs_ack, label: "Thay đổi chờ người dọn xác nhận", href: canCleaning ? "/cleaning" : undefined, tone: "neutral" as const },
+  ].filter((t) => t.count > 0);
+  const urgent = todos.filter((t) => t.tone === "danger").reduce((s, t) => s + t.count, 0);
+  const totalTodo = todos.reduce((s, t) => s + t.count, 0);
+  const realConnectors = data.connectors.filter((c) => c.status !== "demo" && c.status !== "not_configured" && c.status !== "testing");
 
   return (
     <div className="stack">
@@ -36,174 +55,130 @@ export default async function TodayPage() {
         <div className="hero-summary">
           {data.counts.arrivalBookings} khách đến · {data.counts.departureBookings} khách đi · {data.counts.stayoverBookings} ở tiếp
         </div>
-        <div className={`hero-status ${alerts ? "warn" : "ok"}`}>{alerts ? `${alerts} việc cần chú ý hôm nay` : "Mọi thứ đang ổn"}</div>
-        <div className="hero-links">
-          {can(actor, "calendar.view") ? <Link href="/lich">Lịch phòng</Link> : null}
-          {can(actor, "cleaning.view_all") ? <Link href="/cleaning">Dọn phòng</Link> : null}
-          {can(actor, "booking.view") ? <Link href="/duyet">Duyệt{data.pending.change_requests + data.pending.conflicts ? ` (${data.pending.change_requests + data.pending.conflicts})` : ""}</Link> : null}
-        </div>
+        <div className={`hero-status ${totalTodo ? "warn" : "ok"}`}>{totalTodo ? `${totalTodo} việc cần xử lý` : "Mọi thứ đang ổn"}</div>
       </section>
+
       <div className="hide-mobile">
-      <PageHeader
-        title="Tổng quan hôm nay"
-        description={`Ngày vận hành ${formatDateVi(date)} theo giờ Budapest. Số booking và số phòng được đếm riêng; giờ nhận dự kiến không chứng minh khách đã đến.`}
-        actions={
-          <Link className="btn" href="/lich">
-            Mở lịch phòng
-          </Link>
-        }
-      />
+        <PageHeader
+          title={`Chào ${firstName}`}
+          description={`${weekdayVi(date)}, ${formatDateVi(date)} · ngày vận hành theo giờ Budapest`}
+          actions={
+            <>
+              {can(actor, "calendar.view") ? (
+                <Link className="btn" href="/lich">
+                  Lịch phòng
+                </Link>
+              ) : null}
+              {can(actor, "booking.create") ? (
+                <Link className="btn btn-primary" href="/bookings/moi">
+                  Tạo booking
+                </Link>
+              ) : null}
+            </>
+          }
+        />
       </div>
 
-      {data.pending.conflicts ? (
-        <Notice tone="danger" title={`${data.pending.conflicts} xung đột lịch đang mở`}>
-          Kênh bán đã nhận booking trùng đêm với khách khác. <Link href="/duyet">Xem và xử lý</Link>
-        </Notice>
+      <div className="kpi-row hide-mobile">
+        <Stat label="Nhận phòng" value={data.counts.arrivalBookings} sub={`${data.counts.arrivalUnits} phòng`} href="#hom-nay" />
+        <Stat label="Trả phòng" value={data.counts.departureBookings} sub={`${data.counts.departureUnits} phòng`} href="#hom-nay" />
+        <Stat label="Ở tiếp" value={data.counts.stayoverBookings} sub={`${data.counts.stayoverUnits} phòng`} href="#hom-nay" />
+        <Stat label="Cần xử lý" value={totalTodo} sub={urgent ? `${urgent} việc khẩn` : totalTodo ? "không có việc khẩn" : "đã xong hết"} tone={urgent ? "danger" : totalTodo ? "warn" : undefined} href="#can-xu-ly" />
+      </div>
+
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+        <Card title="Cần xử lý" pad={false}>
+          <div id="can-xu-ly" />
+          {todos.length === 0 ? (
+            <div className="todo-done">✓ Không có việc tồn đọng</div>
+          ) : (
+            <ul className="todo-list">
+              {todos.map((t) => {
+                const body = (
+                  <>
+                    <span className={`todo-count ${t.tone}`}>{t.count}</span>
+                    <span className="todo-label">
+                      {t.label}
+                      {t.sub ? <span className="todo-sub">{t.sub}</span> : null}
+                    </span>
+                    {t.href ? <ChevronRight size={18} className="todo-arrow" aria-hidden /> : null}
+                  </>
+                );
+                return (
+                  <li key={t.key}>
+                    {t.href ? (
+                      <Link href={t.href} className="todo-item">
+                        {body}
+                      </Link>
+                    ) : (
+                      <div className="todo-item">{body}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Khách hôm nay" pad={false}>
+          <div id="hom-nay" />
+          <MovementGroup title="Nhận phòng" rows={data.arrivals} showGuest={showGuest} canBooking={canBooking} notReady={new Map(data.notReady.map((r) => [r.unit_id, r.readiness as ReadinessStatus]))} />
+          <MovementGroup title="Trả phòng" rows={data.departures} showGuest={showGuest} canBooking={canBooking} />
+          <MovementGroup title="Ở tiếp" rows={data.stayovers} showGuest={showGuest} canBooking={canBooking} />
+        </Card>
+      </div>
+
+      {can(actor, "connector.view") && realConnectors.length === 0 ? (
+        <div className="small faint">
+          Chưa kết nối kênh bán thật — booking hiện đến từ nhập tay, Excel và nguồn DEMO. <Link href="/ket-noi">Kết nối kênh</Link>
+        </div>
       ) : null}
-
-      <div className="grid grid-4">
-        <Stat label="Nhận phòng" value={data.counts.arrivalBookings} sub={`${data.counts.arrivalUnits} phòng/sản phẩm`} href="#den" />
-        <Stat label="Trả phòng" value={data.counts.departureBookings} sub={`${data.counts.departureUnits} phòng/sản phẩm`} href="#di" />
-        <Stat label="Ở tiếp" value={data.counts.stayoverBookings} sub={`${data.counts.stayoverUnits} phòng/sản phẩm`} href="#o-tiep" />
-        <Stat label="Khách đến — phòng chưa sẵn sàng" value={data.notReady.length} tone={data.notReady.length ? "warn" : undefined} href="#chua-san-sang" />
-        <Stat label="Việc dọn quá hạn" value={data.tasks.overdue} tone={data.tasks.overdue ? "danger" : undefined} href="/cleaning" />
-        <Stat label="Việc chưa phân công" value={data.tasks.unassigned} tone={data.tasks.unassigned ? "warn" : undefined} sub="đến hết hôm nay" href="/cleaning" />
-        <Stat label="Chờ duyệt thay đổi" value={data.pending.change_requests} href="/duyet" />
-        <Stat label="Chờ kiểm phòng" value={data.tasks.awaiting_inspection} sub={data.tasks.needs_ack ? `${data.tasks.needs_ack} việc chờ xác nhận thay đổi` : undefined} href="/cleaning" />
-      </div>
-
-      <div className="grid grid-2">
-        <Card title="Khách đến — phòng chưa sẵn sàng" pad={false}>
-          <div id="chua-san-sang" />
-          {data.notReady.length === 0 ? (
-            <EmptyState title="Không có">Mọi phòng có khách đến hôm nay đã được duyệt sẵn sàng.</EmptyState>
-          ) : (
-            <MovementTable rows={data.notReady} showGuest={showGuest} extra={(r) => <Badge tone="warn">{READINESS_LABELS[r.readiness as ReadinessStatus]}</Badge>} />
-          )}
-        </Card>
-        <Card title="Việc dọn quá hạn" pad={false}>
-          {data.overdueTasks.length === 0 ? (
-            <EmptyState title="Không có việc quá hạn" />
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Phòng</th>
-                    <th>Trạng thái</th>
-                    <th>Hạn</th>
-                    <th>Người làm</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.overdueTasks.map((t) => (
-                    <tr key={t.id}>
-                      <td className="strong">
-                        <Link href={`/cleaning/${t.id}`}>{t.unit_code}</Link>
-                      </td>
-                      <td>
-                        <Badge tone="danger">{TASK_STATUS_LABELS[t.status]}</Badge>
-                      </td>
-                      <td>{formatInstant(t.due_at, actor.timezone)}</td>
-                      <td>{t.assignee ?? <span className="faint">Chưa giao</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <Card title={`Nhận phòng (${data.arrivals.length})`} pad={false}>
-        <div id="den" />
-        {data.arrivals.length ? <MovementTable rows={data.arrivals} showGuest={showGuest} /> : <EmptyState title="Không có khách nhận phòng hôm nay" />}
-      </Card>
-      <Card title={`Trả phòng (${data.departures.length})`} pad={false}>
-        <div id="di" />
-        {data.departures.length ? <MovementTable rows={data.departures} showGuest={showGuest} /> : <EmptyState title="Không có khách trả phòng hôm nay" />}
-      </Card>
-      <Card title={`Ở tiếp (${data.stayovers.length})`} pad={false}>
-        <div id="o-tiep" />
-        {data.stayovers.length ? <MovementTable rows={data.stayovers} showGuest={showGuest} /> : <EmptyState title="Không có khách ở tiếp" />}
-      </Card>
-
-      <Card title="Tình trạng đồng bộ kênh" actions={<Link href="/ket-noi">Chi tiết</Link>} pad={false}>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Kết nối</th>
-                <th>Trạng thái</th>
-                <th>Đồng bộ thành công gần nhất</th>
-                <th>Lỗi gần nhất</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.connectors.map((c) => (
-                <tr key={c.id}>
-                  <td className="strong">
-                    {c.label} {c.status === "demo" ? <DemoBadge /> : null}
-                  </td>
-                  <td>
-                    <Badge tone={connectorTone(c.status)}>{CONNECTOR_STATUS_LABELS[c.status]}</Badge>
-                    {c.paused ? <Badge tone="warn">Tạm dừng</Badge> : null}
-                  </td>
-                  <td>{c.last_success_at ? formatInstant(c.last_success_at, actor.timezone) : <span className="faint">Chưa có</span>}</td>
-                  <td className="small">{c.last_error ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="card-pad small muted">
-          Chưa có kênh thật nào được kết nối. Dữ liệu booking hiện đến từ nhập tay, nhập Excel và nguồn DEMO — không phản ánh trạng thái Airbnb/Booking.com theo thời gian thực.
-        </div>
-      </Card>
     </div>
   );
 }
 
-type Movement = Awaited<ReturnType<typeof todayOverview>>["arrivals"][number];
-
-function MovementTable<T extends Movement>({ rows, showGuest, extra }: { rows: T[]; showGuest: boolean; extra?: (r: T) => React.ReactNode }) {
+function MovementGroup({ title, rows, showGuest, canBooking, notReady }: { title: string; rows: Movement[]; showGuest: boolean; canBooking: boolean; notReady?: Map<string, ReadinessStatus> }) {
   return (
-    <div className="table-wrap">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Phòng</th>
-            <th>Booking</th>
-            {showGuest ? <th>Khách</th> : null}
-            <th className="num">Số khách</th>
-            <th>Giờ</th>
-            <th>Lưu trú</th>
-            {extra ? <th>Phòng</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.booking_id}-${r.unit_id}`}>
-              <td>
-                <span className="strong">{r.unit_code}</span> <span className="faint small">{r.property_code}</span>
-              </td>
-              <td>
-                <Link href={`/bookings/${r.booking_id}`}>{r.external_ref ?? "(không mã)"}</Link> <span className="small faint">{CHANNEL_LABELS[r.source_channel]}</span> <DemoBadge show={r.is_demo} />
-              </td>
-              {showGuest ? <td>{r.guest_name ?? "—"}</td> : null}
-              <td className="num">{r.guests ?? r.total_guests ?? "—"}</td>
-              <td className="small">
-                {r.kind === "arrival" ? `ETA ${r.eta_local ?? "chưa rõ"}${r.early_checkin_time ? ` · nhận sớm ${r.early_checkin_time.slice(0, 5)}` : ""}` : null}
-                {r.kind === "departure" && r.late_checkout_time ? `trả muộn ${r.late_checkout_time.slice(0, 5)}` : null}
-              </td>
-              <td>
-                <Badge tone={r.stay_status === "checked_in" ? "info" : r.stay_status === "checked_out" ? "ok" : "neutral"}>{STAY_STATUS_LABELS[r.stay_status]}</Badge>
-              </td>
-              {extra ? <td>{extra(r)}</td> : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <section>
+      <div className="card-subhead">
+        {title} <span className="faint">{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="mini-empty">Không có</div>
+      ) : (
+        <ul className="mini-list">
+          {rows.map((r) => {
+            const readiness = notReady?.get(r.unit_id);
+            const body: ReactNode = (
+              <>
+                <span className="mini-unit">{r.unit_code}</span>
+                <span className="mini-main">
+                  <div>{showGuest && r.guest_name ? r.guest_name : (r.external_ref ?? "(không mã)")}</div>
+                  <div className="mini-sub">
+                    {CHANNEL_LABELS[r.source_channel] ?? r.source_channel} · {r.guests ?? r.total_guests ?? "?"} khách
+                    {r.kind === "arrival" && r.eta_local ? ` · ETA ${r.eta_local}` : ""}
+                    {r.kind === "arrival" && r.early_checkin_time ? ` · nhận sớm ${r.early_checkin_time.slice(0, 5)}` : ""}
+                    {r.kind === "departure" && r.late_checkout_time ? ` · trả muộn ${r.late_checkout_time.slice(0, 5)}` : ""}
+                  </div>
+                </span>
+                {readiness ? <Badge tone="warn">{READINESS_LABELS[readiness]}</Badge> : r.stay_status !== "expected" ? <Badge tone={r.stay_status === "checked_in" ? "info" : "ok"}>{STAY_STATUS_LABELS[r.stay_status]}</Badge> : null}
+                <DemoBadge show={r.is_demo} />
+              </>
+            );
+            return (
+              <li key={`${r.booking_id}-${r.unit_id}`}>
+                {canBooking ? (
+                  <Link href={`/bookings/${r.booking_id}`} className="mini-row">
+                    {body}
+                  </Link>
+                ) : (
+                  <div className="mini-row">{body}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
