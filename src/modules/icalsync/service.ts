@@ -3,6 +3,7 @@ import { conflict, invalid, notFound } from "@/lib/errors";
 import { addDays, now, todayOps } from "@/lib/time";
 import { auditActorOf, writeAudit } from "@/modules/audit/audit";
 import { type Actor, assertCan } from "@/modules/auth/actor";
+import { applyHolds, releaseHoldsOfFeed } from "./hold";
 import { maskUrl, nightsOf, parseIcal, toRanges } from "./parse";
 
 /**
@@ -69,10 +70,27 @@ export async function addIcalFeed(actor: Actor, input: { listingId: string; url:
 
 export async function removeIcalFeed(actor: Actor, feedId: string) {
   assertCan(actor, "connector.manage");
-  const row = await queryOne<{ listing_id: string }>("DELETE FROM ical_feeds WHERE id = $1 AND org_id = $2 RETURNING listing_id", [feedId, actor.orgId]);
-  if (!row) throw notFound("link iCal");
-  await writeAudit(null, auditActorOf(actor), "ical.feed_remove", "channel_listing", row.listing_id, {});
-  return { ok: true };
+  return withTx(async (tx) => {
+    // Kiểm quyền sở hữu trước (lọc org), rồi mới gỡ chặn tồn do link sinh ra — không để lại chặn không ai quản.
+    const owned = await tx.query<{ listing_id: string }>("SELECT listing_id FROM ical_feeds WHERE id = $1 AND org_id = $2", [feedId, actor.orgId]);
+    if (!owned.rows[0]) throw notFound("link iCal");
+    const released = await releaseHoldsOfFeed(tx, feedId);
+    await tx.query("DELETE FROM ical_feeds WHERE id = $1 AND org_id = $2", [feedId, actor.orgId]);
+    await writeAudit(tx, auditActorOf(actor), "ical.feed_remove", "channel_listing", owned.rows[0].listing_id, { releasedBlocks: released });
+    return { ok: true, releasedBlocks: released };
+  });
+}
+
+/** Bật/tắt "giữ chỗ theo lịch kênh". Tắt ⇒ gỡ ngay mọi chặn do link này sinh ra. */
+export async function setIcalHoldMode(actor: Actor, feedId: string, holdMode: "off" | "block") {
+  assertCan(actor, "connector.manage");
+  return withTx(async (tx) => {
+    const { rows } = await tx.query<{ listing_id: string }>("UPDATE ical_feeds SET hold_mode = $3 WHERE id = $1 AND org_id = $2 RETURNING listing_id", [feedId, actor.orgId, holdMode]);
+    if (!rows[0]) throw notFound("link iCal");
+    const released = holdMode === "off" ? await releaseHoldsOfFeed(tx, feedId) : 0;
+    await writeAudit(tx, auditActorOf(actor), "ical.hold_mode", "channel_listing", rows[0].listing_id, { holdMode, releasedBlocks: released });
+    return { ok: true, holdMode, releasedBlocks: released };
+  });
 }
 
 interface FeedRow {
@@ -81,13 +99,15 @@ interface FeedRow {
   listing_id: string;
   url_secret: string;
   unit_id: string;
+  channel: string;
+  hold_mode: "off" | "block";
   timezone: string;
 }
 
 /** Đồng bộ một link: tải, đọc, đối chiếu, cập nhật phát hiện. Lỗi tải ⇒ ghi last_error, không đụng phát hiện cũ. */
 export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher) {
   const feed = await queryOne<FeedRow>(
-    `SELECT f.id, f.org_id, f.listing_id, f.url_secret, l.unit_id, p.timezone
+    `SELECT f.id, f.org_id, f.listing_id, f.url_secret, f.hold_mode, l.unit_id, l.channel, p.timezone
        FROM ical_feeds f JOIN channel_listings l ON l.id = f.listing_id JOIN units u ON u.id = l.unit_id JOIN properties p ON p.id = u.property_id
       WHERE f.id = $1`,
     [feedId],
@@ -112,6 +132,12 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
   const channelNights = nightsOf(ranges, from, to);
 
   const result = await withTx(async (tx) => {
+    // Giữ chỗ trước, đối chiếu sau: chặn vừa tạo tính là "hệ thống đang bận" nên lệch đã tự xử lý không báo nữa,
+    // còn khoảng không chặn được (đụng booking) vẫn để lại lệch cho người xử lý.
+    const hold =
+      feed.hold_mode === "block"
+        ? await applyHolds(tx, { id: feed.id, org_id: feed.org_id, unit_id: feed.unit_id, channel: feed.channel }, ranges, from, to)
+        : { created: 0, released: 0, skipped: 0 };
     const systemNights = await systemBusyNights(tx, feed.org_id, feed.unit_id, from, to);
     const missingInSystem = [...channelNights].filter((n) => !systemNights.all.has(n));
     const missingOnChannel = [...systemNights.settled].filter((n) => !channelNights.has(n));
@@ -144,7 +170,7 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
       [feed.id, seenIds, from],
     );
     await tx.query("UPDATE ical_feeds SET last_success_at = now(), last_error = NULL, last_event_count = $2 WHERE id = $1", [feed.id, ranges.length]);
-    return { open: found.length, autoClosed: closed.rowCount ?? 0 };
+    return { open: found.length, autoClosed: closed.rowCount ?? 0, hold };
   });
   return { ok: true as const, events: ranges.length, ...result };
 }
@@ -206,9 +232,10 @@ export async function resolveFinding(actor: Actor, findingId: string, input: { s
 export async function listFeeds(actor: Actor) {
   assertCan(actor, "connector.view");
   return query(
-    `SELECT f.id, f.url_hint, f.active, f.poll_minutes, f.last_attempt_at, f.last_success_at, f.last_error, f.last_event_count,
+    `SELECT f.id, f.url_hint, f.active, f.poll_minutes, f.hold_mode, f.last_attempt_at, f.last_success_at, f.last_error, f.last_event_count,
             l.id AS listing_id, l.channel, l.listing_name, u.code AS unit_code,
-            (SELECT count(*)::int FROM calendar_sync_findings s WHERE s.feed_id = f.id AND s.status = 'open') AS open_findings
+            (SELECT count(*)::int FROM calendar_sync_findings s WHERE s.feed_id = f.id AND s.status = 'open') AS open_findings,
+            (SELECT count(*)::int FROM inventory_blocks b WHERE b.ical_feed_id = f.id AND b.source = 'ical' AND b.active) AS hold_blocks
        FROM ical_feeds f JOIN channel_listings l ON l.id = f.listing_id JOIN units u ON u.id = l.unit_id
       WHERE f.org_id = $1 ORDER BY u.code, l.channel`,
     [actor.orgId],

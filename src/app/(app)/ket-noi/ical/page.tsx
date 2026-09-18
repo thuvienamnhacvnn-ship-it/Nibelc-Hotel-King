@@ -6,7 +6,7 @@ import { formatDateVi, formatInstant } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
 import { CHANNEL_LABELS } from "@/modules/booking/types";
 import { listFeeds, listFindings } from "@/modules/icalsync/service";
-import { AddFeedForm, FeedActions, FindingActions } from "./ical-client";
+import { AddFeedForm, FeedActions, FindingActions, HoldToggle } from "./ical-client";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Đối chiếu lịch iCal" };
@@ -32,7 +32,7 @@ export default async function IcalPage() {
     <div className="stack">
       <PageHeader
         title="Đối chiếu lịch iCal"
-        description="Kết nối CHỈ ĐỌC: tải lịch bận/trống từ Airbnb, Booking.com và so với tồn phòng trong hệ thống. Không tạo hay sửa booking từ iCal."
+        description="Tải lịch bận/trống từ Airbnb, Booking.com và so với tồn phòng trong hệ thống. Bật “Giữ chỗ theo lịch kênh” cho một link thì lịch bận của kênh sẽ chặn tồn phòng đó. Không bao giờ tạo hay sửa booking của khách từ iCal."
         actions={
           <Link className="btn" href="/ket-noi">
             ← Kết nối kênh
@@ -98,6 +98,7 @@ export default async function IcalPage() {
                   <th>Phòng</th>
                   <th>Kênh</th>
                   <th>Link (đã che)</th>
+                  <th>Giữ chỗ theo lịch kênh</th>
                   <th>Đồng bộ thành công gần nhất</th>
                   <th>Lỗi gần nhất</th>
                   <th className="num">Lệch mở</th>
@@ -110,6 +111,14 @@ export default async function IcalPage() {
                     <td className="strong">{f.unit_code as string}</td>
                     <td>{CHANNEL_LABELS[f.channel as string]}</td>
                     <td className="mono small">{f.url_hint as string}</td>
+                    <td>
+                      <HoldToggle
+                        id={f.id as string}
+                        holdMode={f.hold_mode as string}
+                        holdBlocks={f.hold_blocks as number}
+                        canManage={can(actor, "connector.manage")}
+                      />
+                    </td>
                     <td className="small">{f.last_success_at ? formatInstant(f.last_success_at as Date, actor.timezone) : <Badge tone="warn">Chưa đồng bộ được</Badge>}</td>
                     <td className="small">{(f.last_error as string) ?? "—"}</td>
                     <td className="num">{f.open_findings as number}</td>
