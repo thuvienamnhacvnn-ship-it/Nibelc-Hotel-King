@@ -14,6 +14,7 @@ import { isPaused } from "@/modules/automation/switches";
  *     Ai nhờ làm việc đó thì nó ghi nhận và nói sẽ chuyển cho người phụ trách.
  *   - Trong nhóm chỉ trả lời khi có người gọi tên (dương quá / trợ lý / bot / hệ thống), tránh nói chen.
  *   - Mỗi hội thoại tối đa 1 tin tự động trong 60 giây và không trả lời hai lần cho cùng một tin.
+ *   - Tin ghi author_type 'system' (không phải 'bot'): luật "người tiếp quản thì bot im lặng" chỉ dành cho hội thoại khách.
  *   - Tin đội gửi được che số điện thoại/email trước khi đưa sang Claude.
  */
 
@@ -210,7 +211,7 @@ Trả lời tin cuối cùng của nhân viên.`;
       await withTx(async (tx) => {
         await tx.query(
           `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
-           VALUES ($1,$2,'out','bot','Dương Quá — trợ lý',$3,'queued',now())`,
+           VALUES ($1,$2,'out','system','Dương Quá — trợ lý',$3,'queued',now())`,
           [p.orgId, p.conversationId, body.slice(0, 3000)],
         );
         await tx.query("UPDATE conversations SET last_message_at = now(), unread_count = 0, updated_at = now() WHERE id = $1", [p.conversationId]);
