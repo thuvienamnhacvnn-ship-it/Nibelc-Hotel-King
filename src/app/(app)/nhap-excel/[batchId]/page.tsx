@@ -66,7 +66,9 @@ export default async function BatchPage({ params, searchParams }: { params: Prom
             {batch.file_name} <DemoBadge show={overview.orgIsDemo} />
           </>
         }
-        description={`Lô nhập từ sheet ${String(batch.options.sourceSheet ?? "TH")}. Giá trị gốc được giữ nguyên theo sheet và số dòng Excel.`}
+        description={`Lô nhập từ sheet ${String(batch.options.sourceSheet ?? "TH")} · tài khoản nguồn: ${
+          typeof batch.options.sourceAccount === "string" && batch.options.sourceAccount ? batch.options.sourceAccount : "không ghi"
+        }. Giá trị gốc được giữ nguyên theo sheet và số dòng Excel.`}
         actions={
           <Link className="btn" href="/nhap-excel">
             ← Các lô

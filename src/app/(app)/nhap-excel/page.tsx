@@ -4,8 +4,9 @@ import { pageParams } from "@/lib/http";
 import { requireActor } from "@/lib/session";
 import { formatInstant } from "@/lib/time";
 import { can } from "@/modules/auth/actor";
+import { CHANNEL_LABELS } from "@/modules/booking/types";
 import { DISPOSITION_LABELS } from "@/modules/imports/excel/issues";
-import { importCatalogOverview, listImportBatches } from "@/modules/imports/queries";
+import { importAccountOptions, importCatalogOverview, listImportBatches } from "@/modules/imports/queries";
 import { AliasFromNamesButton } from "./_components/small-actions";
 import { UploadPanel } from "./_components/upload-panel";
 import { BATCH_STATUS_LABELS, batchTone } from "./labels";
@@ -17,7 +18,8 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const actor = await requireActor("import.preview");
   const sp = await searchParams;
   const page = pageParams(new URL(`http://local/?page=${typeof sp.page === "string" ? sp.page : "1"}&pageSize=20`));
-  const [batches, overview] = await Promise.all([listImportBatches(actor, page), importCatalogOverview(actor)]);
+  const [batches, overview, accounts] = await Promise.all([listImportBatches(actor, page), importCatalogOverview(actor), importAccountOptions(actor)]);
+  const accountChoices = accounts.items.map((a) => ({ id: a.id, text: `${CHANNEL_LABELS[a.channel] ?? a.channel} — ${a.label}` }));
 
   return (
     <div className="stack">
@@ -38,7 +40,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
 
       <div className="grid grid-2">
         <Card title="1. Tải file và xem trước">
-          <UploadPanel />
+          <UploadPanel accounts={accountChoices} accountRequired={accounts.required} />
         </Card>
         <Card title="Tra tên căn/phòng">
           <div className="stack">
@@ -64,6 +66,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
               <thead>
                 <tr>
                   <th>File</th>
+                  <th>Tài khoản nguồn</th>
                   <th>Trạng thái</th>
                   <th>Tổng dòng</th>
                   <th>Hợp lệ</th>
@@ -84,6 +87,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
                         <Link href={`/nhap-excel/${b.id}`}>{b.file_name}</Link>
                         <div className="small faint">Sheet {String(b.options.sourceSheet ?? "TH")}</div>
                       </td>
+                      <td className="small">{typeof b.options.sourceAccount === "string" && b.options.sourceAccount ? b.options.sourceAccount : <span className="faint">Không ghi</span>}</td>
                       <td>
                         <Badge tone={batchTone(b.status)}>{BATCH_STATUS_LABELS[b.status]}</Badge>
                       </td>

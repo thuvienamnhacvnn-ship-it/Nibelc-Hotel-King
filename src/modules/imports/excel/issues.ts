@@ -31,6 +31,7 @@ export const ISSUE_DEFS = {
   room_type_mismatch: { severity: "warn", label: "Loại phòng không khớp sản phẩm" },
   ref_channel_mismatch: { severity: "warn", label: "Dạng mã không giống kênh ghi chú" },
   ref_exists_other_channel: { severity: "warn", label: "Mã đã có trong hệ thống ở kênh khác" },
+  ref_exists_other_account: { severity: "warn", label: "Mã đã có ở tài khoản khác cùng kênh" },
   house_sheet_mismatch: { severity: "warn", label: "Sheet nhà ghi khác sheet nguồn" },
   also_in_source_sheet: { severity: "warn", label: "Mã cũng có ở sheet nguồn" },
   only_in_house_sheet: { severity: "warn", label: "Chỉ có ở sheet nhà, không có ở sheet nguồn" },

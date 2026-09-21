@@ -62,6 +62,11 @@ const propertySchema = z.object({
 export const otaCatalogFile = z.object({
   orgSlug: z.string().trim().min(1, "Thiếu orgSlug"),
   channel: z.enum(CHANNELS, { message: `Kênh phải là một trong: ${CHANNELS.join(", ")}` }),
+  /**
+   * Nhãn TÀI KHOẢN trên kênh (`connector_accounts.label`) — công ty có nhiều tài khoản trên cùng một kênh.
+   * Khai thì listing được gắn `connector_id`; không khai thì listing để trống tài khoản như dữ liệu cũ.
+   */
+  accountLabel: z.string().trim().min(1).max(100).nullish(),
   properties: z.array(propertySchema).min(1, "File không có nhà nào"),
 });
 
@@ -124,6 +129,9 @@ export interface ResourcePlan {
 
 export interface ListingPlan {
   channel: OtaChannel;
+  /** Tài khoản kênh đang bán listing (null = file không khai). */
+  connectorId: string | null;
+  accountLabel: string | null;
   listingName: string | null;
   externalListingId: string | null;
   externalRoomId: string | null;
@@ -165,6 +173,8 @@ export interface OtaCatalogPlan {
   orgId: string;
   orgSlug: string;
   channel: OtaChannel;
+  connectorId: string | null;
+  accountLabel: string | null;
   properties: PropertyPlan[];
   warnings: string[];
   counts: {
@@ -227,8 +237,21 @@ async function capacityBlockedBy(q: Queryable, orgId: string, unitId: string, ne
   return rows[0]?.n ?? 0;
 }
 
+/**
+ * Tài khoản kênh mà file khai. Khai nhãn không có trong `connector_accounts` ⇒ dừng trước khi ghi:
+ * tự tạo tài khoản ở đây sẽ đẻ ra tài khoản ma không ai cấu hình, còn bỏ qua thì listing gắn nhầm tài khoản.
+ */
+async function loadConnector(q: Queryable, orgId: string, channel: OtaChannel, accountLabel: string | null | undefined) {
+  const label = accountLabel?.trim() || null;
+  if (!label) return { connectorId: null, accountLabel: null };
+  const { rows } = await q.query<{ id: string }>("SELECT id FROM connector_accounts WHERE org_id = $1 AND channel = $2 AND label = $3", [orgId, channel, label]);
+  if (!rows[0]) throw notFound(`tài khoản kênh "${label}" của ${channel} — tạo tài khoản trong màn hình Kết nối rồi nhập lại`);
+  return { connectorId: rows[0].id, accountLabel: label };
+}
+
 export async function planOtaCatalog(q: Queryable, file: OtaCatalogFile): Promise<OtaCatalogPlan> {
   const org = await loadOrg(q, file.orgSlug);
+  const account = await loadConnector(q, org.id, file.channel, file.accountLabel);
   const warnings: string[] = [];
   const properties: PropertyPlan[] = [];
 
@@ -357,19 +380,36 @@ export async function planOtaCatalog(q: Queryable, file: OtaCatalogFile): Promis
           external_listing_id: externalId,
           external_room_id: u.externalRoomId,
           capacity_on_channel: u.capacity,
+          account_label: account.accountLabel,
+          connector_id: account.connectorId,
         };
+        // Một sản phẩm có thể có nhiều listing cùng kênh (mỗi tài khoản một cái): ưu tiên listing đúng tài khoản,
+        // không có thì nhận listing chưa gắn tài khoản (dữ liệu cũ) và gắn vào — chạy lại lần hai không đẻ bản ghi mới.
         const existingListing = existing
           ? (
-              await q.query<{ id: string; listing_name: string | null; external_listing_id: string | null; external_room_id: string | null; capacity_on_channel: number | null }>(
-                `SELECT id, listing_name, external_listing_id, external_room_id, capacity_on_channel
-                   FROM channel_listings WHERE org_id = $1 AND unit_id = $2 AND channel = $3 ORDER BY created_at LIMIT 1`,
-                [org.id, existing.id, file.channel],
+              await q.query<{
+                id: string;
+                listing_name: string | null;
+                external_listing_id: string | null;
+                external_room_id: string | null;
+                capacity_on_channel: number | null;
+                account_label: string | null;
+                connector_id: string | null;
+              }>(
+                `SELECT id, listing_name, external_listing_id, external_room_id, capacity_on_channel, account_label, connector_id
+                   FROM channel_listings
+                  WHERE org_id = $1 AND unit_id = $2 AND channel = $3
+                    AND ($4::uuid IS NULL OR connector_id IS NULL OR connector_id = $4)
+                  ORDER BY (connector_id IS NOT DISTINCT FROM $4::uuid) DESC, created_at LIMIT 1`,
+                [org.id, existing.id, file.channel, account.connectorId],
               )
             ).rows[0] ?? null
           : null;
         const listingChanges = existingListing ? diffOf(existingListing as unknown as Record<string, unknown>, wantedListing) : {};
         listing = {
           channel: file.channel,
+          connectorId: account.connectorId,
+          accountLabel: account.accountLabel,
           listingName,
           externalListingId: externalId,
           externalRoomId: u.externalRoomId,
@@ -413,6 +453,8 @@ export async function planOtaCatalog(q: Queryable, file: OtaCatalogFile): Promis
     orgId: org.id,
     orgSlug: org.slug,
     channel: file.channel,
+    connectorId: account.connectorId,
+    accountLabel: account.accountLabel,
     properties,
     warnings,
     counts: {
@@ -501,20 +543,34 @@ async function writePlan(tx: Queryable, plan: OtaCatalogPlan, timezone: string) 
       if (l.action === "create") {
         const id = (
           await tx.query<{ id: string }>(
-            `INSERT INTO channel_listings (org_id, unit_id, channel, listing_name, external_listing_id, external_room_id, capacity_on_channel, status, data_status, data_note)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'needs_confirmation',$9) RETURNING id`,
-            [plan.orgId, unitId, l.channel, l.listingName, l.externalListingId, l.externalRoomId, l.capacityOnChannel, l.status, `Nhập từ danh mục kênh ${plan.channel} (JSON)`],
+            `INSERT INTO channel_listings (org_id, unit_id, channel, connector_id, account_label, listing_name, external_listing_id, external_room_id, capacity_on_channel, status, data_status, data_note)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'needs_confirmation',$11) RETURNING id`,
+            [
+              plan.orgId,
+              unitId,
+              l.channel,
+              l.connectorId,
+              l.accountLabel,
+              l.listingName,
+              l.externalListingId,
+              l.externalRoomId,
+              l.capacityOnChannel,
+              l.status,
+              `Nhập từ danh mục kênh ${plan.channel} (JSON)`,
+            ],
           )
         ).rows[0].id;
-        await writeAudit(tx, auditActor(plan.orgId), ACTION, "channel_listing", id, { unitCode: u.code, channel: l.channel, created: true });
+        await writeAudit(tx, auditActor(plan.orgId), ACTION, "channel_listing", id, { unitCode: u.code, channel: l.channel, accountLabel: l.accountLabel, created: true });
       } else {
+        // Tài khoản chỉ ghi đè khi file khai — file không khai thì giữ nguyên tài khoản đã gắn trước đó.
         await tx.query(
           `UPDATE channel_listings SET listing_name = $3, external_listing_id = coalesce($4, external_listing_id),
-                  external_room_id = coalesce($5, external_room_id), capacity_on_channel = $6, updated_at = now()
+                  external_room_id = coalesce($5, external_room_id), capacity_on_channel = $6,
+                  connector_id = coalesce($7, connector_id), account_label = coalesce($8, account_label), updated_at = now()
             WHERE id = $1 AND org_id = $2`,
-          [l.id, plan.orgId, l.listingName, l.externalListingId, l.externalRoomId, l.capacityOnChannel],
+          [l.id, plan.orgId, l.listingName, l.externalListingId, l.externalRoomId, l.capacityOnChannel, l.connectorId, l.accountLabel],
         );
-        await writeAudit(tx, auditActor(plan.orgId), ACTION, "channel_listing", l.id, { unitCode: u.code, channel: l.channel, changes: l.changes });
+        await writeAudit(tx, auditActor(plan.orgId), ACTION, "channel_listing", l.id, { unitCode: u.code, channel: l.channel, accountLabel: l.accountLabel, changes: l.changes });
       }
     }
   }
@@ -543,6 +599,7 @@ export async function importOtaCatalog(file: OtaCatalogFile, opts: { dryRun?: bo
     };
     await writeAudit(tx, auditActor(org.id), ACTION, "organization", org.id, {
       channel: plan.channel,
+      accountLabel: plan.accountLabel,
       counts: plan.counts,
       warnings: plan.warnings.length,
       aliases: result.aliases,

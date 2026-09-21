@@ -77,23 +77,47 @@ async function appliedBatchFor(orgId: string, fileSha: string) {
   );
 }
 
-/** Đánh dấu dòng đã có booking cùng kênh + mã trong tổ chức. Mã trùng ở kênh khác chỉ cảnh báo. */
-export async function markAlreadyImported(orgId: string, rows: ParsedImportRow[]) {
+/** Nhãn tài khoản nguồn để đưa vào thông điệp — lô cũ không ghi tài khoản thì nói rõ là chưa ghi. */
+const accountText = (account: string) => account || "chưa ghi tài khoản";
+
+/**
+ * `source_account = ''` nghĩa là CHƯA BIẾT tài khoản, không phải "tài khoản tên rỗng": mọi booking nhập
+ * trước khi có ô chọn tài khoản đều mang giá trị này. Nên một bên rỗng thì coi như CÙNG đơn — nếu không,
+ * nhập lại bản xuất tháng sau (lần này có chọn tài khoản) sẽ đẻ ra booking thứ hai cho cùng một đơn thật.
+ */
+const sameSourceAccount = (a: string, b: string) => a === b || a === "" || b === "";
+
+/**
+ * Đánh dấu dòng đã có booking cùng kênh + cùng tài khoản + mã trong tổ chức (xem `sameSourceAccount`).
+ * Chỉ khi CẢ HAI bên đều ghi rõ tài khoản và khác nhau mới là hai đơn khác nhau ⇒ cảnh báo, vẫn nhập được.
+ * Mã trùng ở kênh khác cũng chỉ cảnh báo.
+ */
+export async function markAlreadyImported(orgId: string, rows: ParsedImportRow[], sourceAccount = "") {
   const refs = [...new Set(rows.map((r) => r.parsed.externalRef).filter((x): x is string => !!x))];
   if (!refs.length) return;
-  const found = await query<{ source_channel: string; external_ref: string; id: string }>(
-    "SELECT source_channel, external_ref, id FROM bookings WHERE org_id = $1 AND external_ref = ANY($2::text[])",
+  const found = await query<{ source_channel: string; source_account: string; external_ref: string; id: string }>(
+    "SELECT source_channel, source_account, external_ref, id FROM bookings WHERE org_id = $1 AND external_ref = ANY($2::text[])",
     [orgId, refs],
   );
-  const byRef = new Map<string, { channel: string; id: string }[]>();
-  for (const f of found) byRef.set(f.external_ref, [...(byRef.get(f.external_ref) ?? []), { channel: f.source_channel, id: f.id }]);
+  const byRef = new Map<string, { channel: string; account: string; id: string }[]>();
+  for (const f of found) byRef.set(f.external_ref, [...(byRef.get(f.external_ref) ?? []), { channel: f.source_channel, account: f.source_account, id: f.id }]);
   for (const r of rows) {
     const ref = r.parsed.externalRef;
     if (!ref || !byRef.has(ref)) continue;
     const hits = byRef.get(ref)!;
-    const same = r.parsed.channel ? hits.find((h) => h.channel === r.parsed.channel) : undefined;
+    const sameChannel = r.parsed.channel ? hits.filter((h) => h.channel === r.parsed.channel) : [];
+    // Khớp đúng tài khoản trước; không có thì mới nhận bản ghi "chưa biết tài khoản" (dữ liệu nhập đời trước).
+    const same = sameChannel.find((h) => h.account === sourceAccount) ?? sameChannel.find((h) => sameSourceAccount(h.account, sourceAccount));
     if (same && (r.disposition === "ready" || r.disposition === "needs_review")) {
       r.disposition = "already_imported";
+    } else if (!same && sameChannel.length) {
+      r.issues.push(
+        issue(
+          "ref_exists_other_account",
+          `Mã đã có ở kênh này nhưng thuộc tài khoản ${sameChannel.map((h) => accountText(h.account)).join(", ")} — lô này nhập cho tài khoản ${accountText(sourceAccount)}.`,
+        ),
+      );
+      r.disposition = dispositionOf(r.issues, r.disposition);
     } else if (!same) {
       r.issues.push(issue("ref_exists_other_channel", `Mã đã có trong hệ thống ở kênh ${hits.map((h) => h.channel).join(", ")}.`));
       r.disposition = dispositionOf(r.issues, r.disposition);
@@ -101,31 +125,97 @@ export async function markAlreadyImported(orgId: string, rows: ParsedImportRow[]
   }
 }
 
+// ───────────────────────── Tài khoản nguồn của lô ─────────────────────────
+
+export interface SourceAccountChoice {
+  /** Ghi thẳng vào `bookings.source_account`. Rỗng = lô không khai tài khoản (tương thích dữ liệu cũ). */
+  sourceAccount: string;
+  connectorId: string | null;
+}
+
+/** Tổ chức có từ hai tài khoản trở lên trên CÙNG một kênh ⇒ lô nhập buộc phải nói rõ của tài khoản nào. */
+export async function importNeedsAccountChoice(orgId: string): Promise<boolean> {
+  const row = await queryOne<{ n: number }>(
+    "SELECT count(*)::int AS n FROM (SELECT 1 FROM connector_accounts WHERE org_id = $1 GROUP BY channel HAVING count(*) > 1) x",
+    [orgId],
+  );
+  return (row?.n ?? 0) > 0;
+}
+
+/**
+ * Tài khoản nguồn của lô: `connectorId`, hoặc nhãn — nhưng nhãn PHẢI khớp một `connector_accounts.label` có thật
+ * của tổ chức (cùng cách với `loadConnector` trong `ota-catalog.ts`). Nhận nhãn gõ tự do là mở đường cho
+ * "BDC  Nha X" (hai dấu cách) thành một namespace khoá nguồn riêng — đúng cái đường sinh booking trùng.
+ * Không khai gì mà tổ chức đang có nhiều tài khoản cùng kênh ⇒ dừng, không đoán.
+ */
+async function resolveSourceAccount(orgId: string, opts: { connectorId?: string | null; sourceAccount?: string | null }): Promise<SourceAccountChoice> {
+  const connectorId = opts.connectorId?.trim() || null;
+  if (connectorId) {
+    if (!UUID_RE.test(connectorId)) throw notFound("tài khoản kênh");
+    const row = await queryOne<{ id: string; label: string }>("SELECT id, label FROM connector_accounts WHERE id = $1 AND org_id = $2", [connectorId, orgId]);
+    if (!row) throw notFound("tài khoản kênh");
+    return { sourceAccount: row.label, connectorId: row.id };
+  }
+  const label = (opts.sourceAccount ?? "").trim();
+  if (!label) {
+    if (await importNeedsAccountChoice(orgId)) {
+      throw new AppError(
+        "source_account_required",
+        "Tổ chức có nhiều tài khoản trên cùng một kênh — chọn tài khoản nguồn cho lô nhập này (hai tài khoản có thể trùng mã đặt phòng).",
+        422,
+      );
+    }
+    return { sourceAccount: "", connectorId: null };
+  }
+  // Cùng nhãn ở hai kênh thì giá trị ghi vào `source_account` vẫn như nhau; `connectorId` chỉ để truy vết.
+  const row = await queryOne<{ id: string; label: string }>("SELECT id, label FROM connector_accounts WHERE org_id = $1 AND label = $2 ORDER BY channel LIMIT 1", [orgId, label]);
+  if (!row) throw notFound(`tài khoản kênh "${label}" — tạo tài khoản trong màn hình Kết nối rồi nhập lại`);
+  return { sourceAccount: row.label, connectorId: row.id };
+}
+
 export interface PreviewResult {
   batchId: string;
   fileSha256: string;
   sourceSheet: string;
+  sourceAccount: string;
   stats: ImportStats & { sheets: unknown };
 }
 
+export interface PreviewOptions {
+  sourceSheet?: string;
+  /** Tài khoản OTA của lô — lấy nhãn từ `connector_accounts`. */
+  connectorId?: string | null;
+  /** Nhãn tài khoản gõ tay khi chưa có connector tương ứng. */
+  sourceAccount?: string | null;
+  lookup?: UnitLookup;
+}
+
 /** Phân tích file và lưu lô xem trước cho tổ chức của actor. Không tạo booking. */
-export async function previewImport(actor: Actor, file: UploadedFile, opts: { sourceSheet?: string; lookup?: UnitLookup } = {}): Promise<PreviewResult> {
+export async function previewImport(actor: Actor, file: UploadedFile, opts: PreviewOptions = {}): Promise<PreviewResult> {
   assertCan(actor, "import.preview");
   assertXlsx(file);
+  const account = await resolveSourceAccount(actor.orgId, opts);
   const fileSha = sha256(file.data);
   const applied = await appliedBatchFor(actor.orgId, fileSha);
   if (applied) throw conflict("file_already_applied", "File này (cùng nội dung) đã được áp dụng trước đó.", { batchId: applied.id });
 
   const lookup = opts.lookup ?? (await loadUnitLookup(actor.orgId));
   const result = await withParseErrors(() => parseBookingWorkbook(file.data, { sourceSheet: opts.sourceSheet, lookup }));
-  await markAlreadyImported(actor.orgId, result.rows);
+  await markAlreadyImported(actor.orgId, result.rows, account.sourceAccount);
   const stats = { ...summarizeRows(result.rows), sheets: result.sheets };
 
   const batchId = await withTx(async (tx) => {
     const batch = await tx.query<{ id: string }>(
       `INSERT INTO import_batches (org_id, file_name, file_sha256, status, stats, options, created_by)
        VALUES ($1,$2,$3,'previewed',$4,$5,$6) RETURNING id`,
-      [actor.orgId, file.fileName.slice(0, 255), fileSha, JSON.stringify(stats), JSON.stringify({ sourceSheet: result.sourceSheet }), actor.userId],
+      [
+        actor.orgId,
+        file.fileName.slice(0, 255),
+        fileSha,
+        JSON.stringify(stats),
+        JSON.stringify({ sourceSheet: result.sourceSheet, sourceAccount: account.sourceAccount, connectorId: account.connectorId }),
+        actor.userId,
+      ],
     );
     const id = batch.rows[0].id;
     const CHUNK = 400;
@@ -150,11 +240,13 @@ export async function previewImport(actor: Actor, file: UploadedFile, opts: { so
       fileName: file.fileName,
       fileSha256: fileSha,
       sourceSheet: result.sourceSheet,
+      sourceAccount: account.sourceAccount,
+      connectorId: account.connectorId,
       byDisposition: stats.byDisposition,
     });
     return id;
   });
-  return { batchId, fileSha256: fileSha, sourceSheet: result.sourceSheet, stats };
+  return { batchId, fileSha256: fileSha, sourceSheet: result.sourceSheet, sourceAccount: account.sourceAccount, stats };
 }
 
 // ───────────────────────── Áp dụng ─────────────────────────
@@ -193,7 +285,7 @@ type RowOutcome =
  * (đã đề xuất bổ sung tuỳ chọn cho lõi). Tồn phòng vẫn giữ bằng insertAllocation (khoá + kiểm + EXCLUDE);
  * lịch sử ghi bằng recordBookingChange; khoá mã nguồn dùng cùng khoá tư vấn với service lõi.
  */
-async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: string, isDemo: boolean): Promise<RowOutcome> {
+async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: string, isDemo: boolean, sourceAccount: string): Promise<RowOutcome> {
   const p = row.parsed;
   if (!p.externalRef || !p.channel || !p.unit?.unitId || !p.checkIn || !p.checkOut || !p.guestName) {
     return { disposition: "error", error: issue("apply_error", "Dòng thiếu dữ liệu bắt buộc (mã, kênh, phòng, ngày, tên khách) — phân tích lại file.") };
@@ -205,11 +297,20 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
       // Nhận dòng: chỉ xử lý nếu vẫn 'ready' (khoá dòng tới hết giao dịch) — hai lượt áp dụng không ghi đè kết quả của nhau.
       const claim = await tx.query("SELECT 1 FROM import_rows WHERE id = $1 AND disposition = 'ready' FOR UPDATE", [row.id]);
       if (!claim.rows.length) return { disposition: "not_ready" as const };
-      await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 7332))", [`${importer.orgId}|${channel}||${ref}`]);
-      // Đã có booking cùng kênh + mã ở BẤT KỲ tài khoản nào (connector ghi source_account) ⇒ không tạo thêm.
+      // Khoá "chưa biết tài khoản" (org|kênh||mã) luôn lấy TRƯỚC: một lô ghi '' và một lô có nhãn cùng mã vẫn là
+      // cùng một đơn (xem `sameSourceAccount`) nên phải xếp hàng với nhau; khoá theo đúng tài khoản lấy sau để giữ
+      // cùng khoá tư vấn với service lõi (`booking/service.ts`). Thứ tự cố định ⇒ hai lô không kẹt chéo.
+      const lock = "SELECT pg_advisory_xact_lock(hashtextextended($1, 7332))";
+      await tx.query(lock, [`${importer.orgId}|${channel}||${ref}`]);
+      if (sourceAccount) await tx.query(lock, [`${importer.orgId}|${channel}|${sourceAccount}|${ref}`]);
+      // Đã có booking cùng kênh + mã ở cùng tài khoản (hoặc một bên chưa biết tài khoản) ⇒ không tạo thêm.
+      // Chỉ khi cả hai bên ghi rõ tài khoản và khác nhau mới là đơn khác. Bản ghi đúng tài khoản được ưu tiên.
       const existing = await tx.query<{ id: string }>(
-        "SELECT id FROM bookings WHERE org_id = $1 AND source_channel = $2 AND external_ref = $3 ORDER BY created_at LIMIT 1",
-        [importer.orgId, channel, ref],
+        `SELECT id FROM bookings
+          WHERE org_id = $1 AND source_channel = $2 AND external_ref = $4
+            AND (source_account = $3 OR source_account = '' OR $3 = '')
+          ORDER BY (source_account = $3) DESC, created_at LIMIT 1`,
+        [importer.orgId, channel, sourceAccount, ref],
       );
       if (existing.rows[0]) {
         await tx.query("UPDATE import_rows SET disposition = 'already_imported', booking_id = $2 WHERE id = $1", [row.id, existing.rows[0].id]);
@@ -234,9 +335,9 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
       const created = await tx.query<{ id: string; org_id: string; version: number }>(
         `INSERT INTO bookings (org_id, source_channel, source_account, external_ref, guest_id, booking_status, stay_status, payment_status,
                                check_in_date, check_out_date, total_guests, currency, booking_created_at, channel_note, ops_note, created_by, is_demo)
-         VALUES ($1,$2,'',$3,$4,'confirmed',$5,'unknown',$6,$7,$8,'EUR',$9,$10,$11,$12,$13)
+         VALUES ($1,$2,$3,$4,$5,'confirmed',$6,'unknown',$7,$8,$9,'EUR',$10,$11,$12,$13,$14)
          RETURNING id, org_id, version`,
-        [importer.orgId, channel, ref, guest.rows[0].id, stayStatus, checkIn, checkOut, p.totalGuests, bookedAt, channelNote, opsNote.slice(0, 2000), importer.userId, isDemo],
+        [importer.orgId, channel, sourceAccount, ref, guest.rows[0].id, stayStatus, checkIn, checkOut, p.totalGuests, bookedAt, channelNote, opsNote.slice(0, 2000), importer.userId, isDemo],
       );
       const booking = created.rows[0];
       await insertAllocation(tx, importer.orgId, booking.id, { unitId, startDate: checkIn, endDate: checkOut, guests: p.totalGuests }, { onConflict: "throw" });
@@ -246,7 +347,14 @@ async function applyRow(importer: Actor, batchId: string, row: ReadyRow, today: 
         source: "excel",
         sourceRef: `${batchId}:${row.sheet}:${row.row_number}`,
       });
-      await writeAudit(tx, auditActorOf(importer), "booking.import", "booking", booking.id, { batchId, sheet: row.sheet, rowNumber: row.row_number, sourceChannel: channel, externalRef: ref });
+      await writeAudit(tx, auditActorOf(importer), "booking.import", "booking", booking.id, {
+        batchId,
+        sheet: row.sheet,
+        rowNumber: row.row_number,
+        sourceChannel: channel,
+        sourceAccount,
+        externalRef: ref,
+      });
       await tx.query("UPDATE import_rows SET disposition = 'applied', booking_id = $2 WHERE id = $1", [row.id, booking.id]);
       return { disposition: "applied" as const, bookingId: booking.id };
     });
@@ -269,8 +377,14 @@ export async function applyImport(actor: Actor, batchId: string, opts: ApplyOpti
   if (opts.skipCheckOutBefore && !/^\d{4}-\d{2}-\d{2}$/.test(opts.skipCheckOutBefore)) throw invalid("Mốc ngày không hợp lệ (YYYY-MM-DD).");
 
   const runId = crypto.randomUUID();
-  const isDemo = await withTx(async (tx) => {
-    const { rows } = await tx.query<{ id: string; status: string; file_sha256: string; options: { applying?: { runId: string; startedAt: string } }; is_demo: boolean }>(
+  const batchInfo = await withTx(async (tx) => {
+    const { rows } = await tx.query<{
+      id: string;
+      status: string;
+      file_sha256: string;
+      options: { applying?: { runId: string; startedAt: string }; sourceAccount?: unknown };
+      is_demo: boolean;
+    }>(
       "SELECT b.id, b.status, b.file_sha256, b.options, o.is_demo FROM import_batches b JOIN organizations o ON o.id = b.org_id WHERE b.id = $1 AND b.org_id = $2 FOR UPDATE OF b",
       [batchId, actor.orgId],
     );
@@ -300,17 +414,19 @@ export async function applyImport(actor: Actor, batchId: string, opts: ApplyOpti
       batchId,
       runId,
     ]);
-    await writeAudit(tx, auditActorOf(actor), "import.apply_started", "import_batch", batchId, { runId, skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
-    return batch.is_demo;
+    // Lô cũ (trước khi có chọn tài khoản) không có khoá này ⇒ giữ nguyên '' như dữ liệu đã nhập.
+    const sourceAccount = typeof batch.options?.sourceAccount === "string" ? batch.options.sourceAccount : "";
+    await writeAudit(tx, auditActorOf(actor), "import.apply_started", "import_batch", batchId, { runId, sourceAccount, skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
+    return { isDemo: batch.is_demo, sourceAccount };
   });
   try {
-    return await runApply(actor, batchId, opts, isDemo, runId);
+    return await runApply(actor, batchId, opts, batchInfo.isDemo, runId, batchInfo.sourceAccount);
   } finally {
     await query("UPDATE import_batches SET options = options - 'applying' WHERE id = $1 AND options->'applying'->>'runId' = $2", [batchId, runId]);
   }
 }
 
-async function runApply(actor: Actor, batchId: string, opts: ApplyOptions, isDemo: boolean, runId: string): Promise<ApplyResult> {
+async function runApply(actor: Actor, batchId: string, opts: ApplyOptions, isDemo: boolean, runId: string, sourceAccount: string): Promise<ApplyResult> {
 
   // Tác nhân nhập: chỉ quyền cần để ghi booking; vẫn gắn người bấm áp dụng để truy vết.
   const importer: Actor = { ...systemActor(actor.orgId, "import", ["booking.create", "revenue.view"], actor.timezone), userId: actor.userId, ip: actor.ip };
@@ -328,7 +444,7 @@ async function runApply(actor: Actor, batchId: string, opts: ApplyOptions, isDem
       if (upd.length) result.skipped += 1;
       continue;
     }
-    const outcome = await applyRow(importer, batchId, row, today, isDemo);
+    const outcome = await applyRow(importer, batchId, row, today, isDemo, sourceAccount);
     if (outcome.disposition === "not_ready") continue;
     if (outcome.disposition === "error") {
       // Giao dịch của dòng đã huỷ ⇒ ghi lỗi riêng, vẫn chỉ khi dòng còn 'ready'.
@@ -341,8 +457,8 @@ async function runApply(actor: Actor, batchId: string, opts: ApplyOptions, isDem
     }
   }
 
-  const stats = await recomputeStats(actor.orgId, batchId, { ...result, finishedAt: new Date().toISOString(), skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
-  await writeAudit(null, auditActorOf(actor), "import.apply_finished", "import_batch", batchId, { runId, ...result });
+  const stats = await recomputeStats(actor.orgId, batchId, { ...result, sourceAccount, finishedAt: new Date().toISOString(), skipCheckOutBefore: opts.skipCheckOutBefore ?? null });
+  await writeAudit(null, auditActorOf(actor), "import.apply_finished", "import_batch", batchId, { runId, sourceAccount, ...result });
   return { batchId, ...result, stats };
 }
 

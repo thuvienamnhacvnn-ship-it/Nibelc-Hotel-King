@@ -19,6 +19,8 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  UserCog,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -42,6 +44,8 @@ const ICONS: Record<string, typeof BookOpen> = {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  UserCog,
+  Users,
 };
 
 export interface ShellNavGroup {

@@ -123,7 +123,7 @@ describe("Bộ đọc Excel (thuần, không DB)", () => {
 
     // Mọi mã lý do ở mức phân tích file đều được fixture phủ (các mã còn lại chỉ phát sinh khi đối chiếu DB / áp dụng)
     const seen = new Set(result.rows.flatMap((r) => r.issues.map((i) => i.code)));
-    const dbOnly = ["ref_exists_other_channel", "past_stay_skipped", "apply_error"];
+    const dbOnly = ["ref_exists_other_channel", "ref_exists_other_account", "past_stay_skipped", "apply_error"];
     for (const code of Object.keys(ISSUE_DEFS).filter((c) => !dbOnly.includes(c))) expect(seen, `thiếu mã ${code}`).toContain(code);
   });
 });
@@ -270,13 +270,16 @@ describe("Nhập Excel vào database", () => {
     expect(again.errors).toBe(1);
   });
 
-  it("hai lượt áp dụng cùng lúc: một lượt chạy, lượt kia 409; mã đã có ở tài khoản kênh khác ⇒ đã có; booking tổ chức DEMO mang nhãn DEMO", async () => {
+  it("hai lượt áp dụng cùng lúc: một lượt chạy, lượt kia 409; mã đã có ở CÙNG tài khoản ⇒ đã có; booking tổ chức DEMO mang nhãn DEMO", async () => {
     setClock(() => new Date("2026-09-16T08:00:00Z"));
     const org = await makeDemoCatalogOrg();
     await createAliasesFromUnitNames(org.actors.admin);
     const manager = org.actors.vn_manager;
-    const preview = await previewImport(manager, { fileName: "demo-lich-dat-phong.xlsx", data: fixture() });
-    // Booking do connector tạo (có source_account) cùng kênh + mã với dòng 20 — tạo sau xem trước
+    // Lô nhập khai đúng tài khoản OTA ⇒ mọi booking của lô mang tài khoản đó (xem tests/imports-multi-account.test.ts).
+    // Nhãn phải là tài khoản có thật của tổ chức, nên khai nó vào connector_accounts trước.
+    await query("INSERT INTO connector_accounts (org_id, channel, label, status) VALUES ($1,'booking_com','acc-demo','not_configured')", [org.orgId]);
+    const preview = await previewImport(manager, { fileName: "demo-lich-dat-phong.xlsx", data: fixture() }, { sourceAccount: "acc-demo" });
+    // Booking do connector tạo, CÙNG kênh + CÙNG tài khoản + cùng mã với dòng 20 — tạo sau xem trước
     await createBooking(manager, { sourceChannel: "booking_com", sourceAccount: "acc-demo", externalRef: "HMDEMO0020", guest: { fullName: "Khách Demo kênh" }, checkInDate: "2027-04-01", checkOutDate: "2027-04-02", allocations: [{ unitId: org.demoUnits.C001 }] });
 
     const settled = await Promise.allSettled([
@@ -293,7 +296,7 @@ describe("Nhập Excel vào database", () => {
     const byD = Object.fromEntries(rows.map((r) => [r.disposition, r.n]));
     expect(byD.applied ?? 0).toBe(run.applied);
     expect(byD.ready ?? 0).toBe(0);
-    const imported = await queryOne<{ n: number }>("SELECT count(*)::int AS n FROM bookings WHERE org_id = $1 AND source_account = ''", [org.orgId]);
+    const imported = await queryOne<{ n: number }>("SELECT count(*)::int AS n FROM bookings WHERE org_id = $1 AND source_account = 'acc-demo' AND external_ref <> 'HMDEMO0020'", [org.orgId]);
     expect(imported?.n).toBe(run.applied);
     const audits = await query<{ action: string; n: number }>("SELECT action, count(*)::int AS n FROM audit_log WHERE org_id = $1 AND entity_id = $2 GROUP BY action", [org.orgId, preview.batchId]);
     expect(Object.fromEntries(audits.map((a) => [a.action, a.n]))).toMatchObject({ "import.apply_started": 1, "import.apply_finished": 1 });
@@ -305,7 +308,7 @@ describe("Nhập Excel vào database", () => {
     const row20 = await queryOne<{ disposition: string }>("SELECT disposition FROM import_rows WHERE batch_id = $1 AND sheet = 'TH' AND row_number = $2", [preview.batchId, thRow(20)]);
     expect(row20?.disposition).toBe("already_imported");
 
-    const demo = await query<{ b: boolean; g: boolean }>("SELECT b.is_demo AS b, g.is_demo AS g FROM bookings b JOIN guests g ON g.id = b.guest_id WHERE b.org_id = $1 AND b.source_account = ''", [org.orgId]);
+    const demo = await query<{ b: boolean; g: boolean }>("SELECT b.is_demo AS b, g.is_demo AS g FROM bookings b JOIN guests g ON g.id = b.guest_id WHERE b.org_id = $1 AND b.source_account = 'acc-demo' AND b.external_ref <> 'HMDEMO0020'", [org.orgId]);
     expect(demo.length).toBeGreaterThan(0);
     expect(demo.every((d) => d.b && d.g)).toBe(true);
   });

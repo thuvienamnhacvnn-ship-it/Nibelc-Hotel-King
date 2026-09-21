@@ -9,6 +9,7 @@ export interface NavItem {
   href: string;
   label: string;
   icon: string;
+  /** Quyền nào cũng được thì hiện mục. Mảng rỗng = ai đăng nhập cũng thấy (ví dụ trang tài khoản của chính mình). */
   any: Permission[];
 }
 
@@ -45,10 +46,15 @@ export const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: "/bao-cao", label: "Báo cáo", icon: "FileBarChart", any: ["reports.view"] },
       { href: "/agent-center", label: "Agent Center", icon: "Bot", any: ["automation.pause", "reports.view"] },
+      { href: "/nguoi-dung", label: "Người dùng", icon: "Users", any: ["users.manage"] },
     ],
+  },
+  {
+    group: "Tài khoản",
+    items: [{ href: "/tai-khoan", label: "Tài khoản của tôi", icon: "UserCog", any: [] }],
   },
 ];
 
 export function navFor(actor: Actor) {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => i.any.some((p) => actor.permissions.has(p))) })).filter((g) => g.items.length);
+  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => i.any.length === 0 || i.any.some((p) => actor.permissions.has(p))) })).filter((g) => g.items.length);
 }

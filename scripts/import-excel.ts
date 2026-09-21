@@ -7,6 +7,8 @@
  *     npx tsx scripts/import-excel.ts --file <xlsx> --dry-run --org <slug>
  *   Ghi vào DB (lưu lô xem trước rồi áp dụng dòng hợp lệ):
  *     npx tsx scripts/import-excel.ts --file <xlsx> --org <slug> --apply [--sheet TH] [--skip-before YYYY-MM-DD]
+ *     Nhiều tài khoản OTA cùng kênh thì BẮT BUỘC có --account <nhãn tài khoản> (ghi vào bookings.source_account).
+ *     Nhãn phải khớp một connector_accounts.label có thật của tổ chức — không nhận nhãn gõ tự do.
  *
  * Chỉ in số đếm, mã lý do và tên phòng chưa có alias — không in tên khách, SĐT hay mã booking.
  */
@@ -24,6 +26,7 @@ function args() {
     file: get("file"),
     sheet: get("sheet") ?? "TH",
     org: get("org"),
+    account: get("account"),
     catalogDocx: get("catalog-docx"),
     skipBefore: get("skip-before"),
     dryRun: argv.includes("--dry-run"),
@@ -44,7 +47,7 @@ function printStats(stats: { total: number; byDisposition: Record<string, number
 async function main() {
   const a = args();
   if (!a.file || (!a.dryRun && !a.apply) || (a.dryRun && a.apply)) {
-    console.error("Cách dùng: --file <xlsx> (--dry-run [--catalog-docx <docx> | --org <slug>] | --org <slug> --apply) [--sheet TH] [--skip-before YYYY-MM-DD]");
+    console.error("Cách dùng: --file <xlsx> (--dry-run [--catalog-docx <docx> | --org <slug>] | --org <slug> --apply) [--sheet TH] [--account <nhãn tài khoản>] [--skip-before YYYY-MM-DD]");
     process.exit(2);
   }
   const data = fs.readFileSync(a.file);
@@ -111,8 +114,8 @@ async function main() {
     const { systemActor } = await import("../src/modules/auth/actor");
     const { applyImport, previewImport } = await import("../src/modules/imports/service");
     const actor = systemActor(org.id, "import", ["import.preview", "import.apply", "booking.create", "revenue.view"], org.timezone);
-    const preview = await previewImport(actor, { fileName, data }, { sourceSheet: a.sheet });
-    console.log(`Đã lưu lô xem trước ${preview.batchId}${org.is_demo ? " (tổ chức DEMO)" : ""}`);
+    const preview = await previewImport(actor, { fileName, data }, { sourceSheet: a.sheet, sourceAccount: a.account ?? null });
+    console.log(`Đã lưu lô xem trước ${preview.batchId} — tài khoản nguồn: ${preview.sourceAccount || "không ghi"}${org.is_demo ? " (tổ chức DEMO)" : ""}`);
     printStats(preview.stats, labels);
     const result = await applyImport(actor, preview.batchId, { skipCheckOutBefore: a.skipBefore ?? null });
     console.log(`\nÁp dụng: tạo ${result.applied}, đã có ${result.alreadyImported}, lỗi ${result.errors}, bỏ qua ${result.skipped}`);

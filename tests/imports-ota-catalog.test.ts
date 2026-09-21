@@ -240,4 +240,35 @@ describe("Nhập danh mục từ file kênh bán (JSON)", () => {
     const done = await importOtaCatalog(parseOtaCatalog(fileFor(f.slug, s)));
     expect(done.counts.units.create).toBe(3);
   });
+
+  it("file khai tài khoản kênh ⇒ listing gắn connector_id; nhãn lạ thì dừng trước khi ghi; chạy lại không đẻ listing mới", async () => {
+    const f = await realOrg();
+    const s = uid();
+    const label = `BDC ${s}`;
+    const connectorId = (
+      await queryOne<{ id: string }>("INSERT INTO connector_accounts (org_id, channel, label, status) VALUES ($1,'booking_com',$2,'not_configured') RETURNING id", [f.orgId, label])
+    )!.id;
+
+    // Nhãn không có trong connector_accounts ⇒ dừng, chưa ghi gì (không tự đẻ tài khoản ma).
+    await expectCode(importOtaCatalog(parseOtaCatalog({ ...fileFor(f.slug, s), accountLabel: `Khong co ${s}` })), "not_found");
+    expect((await queryOne<{ n: number }>("SELECT count(*)::int AS n FROM units WHERE org_id = $1 AND code LIKE $2", [f.orgId, `%ULLOI66%${s}`]))?.n).toBe(0);
+
+    const r = await importOtaCatalog(parseOtaCatalog({ ...fileFor(f.slug, s), accountLabel: label }));
+    expect(r.counts.listings).toMatchObject({ create: 3 });
+    const listings = await query<{ connector_id: string | null; account_label: string | null }>(
+      `SELECT cl.connector_id, cl.account_label FROM channel_listings cl JOIN units u ON u.id = cl.unit_id WHERE u.org_id = $1 AND u.code LIKE $2`,
+      [f.orgId, `%ULLOI66%${s}`],
+    );
+    expect(listings).toHaveLength(3);
+    expect(listings.every((l) => l.connector_id === connectorId && l.account_label === label)).toBe(true);
+
+    // Chạy lại cùng file: nhận đúng listing của tài khoản đó, không tạo thêm.
+    const again = await importOtaCatalog(parseOtaCatalog({ ...fileFor(f.slug, s), accountLabel: label }));
+    expect(again.counts.listings).toMatchObject({ create: 0 });
+    const n = await queryOne<{ n: number }>(
+      `SELECT count(*)::int AS n FROM channel_listings cl JOIN units u ON u.id = cl.unit_id WHERE u.org_id = $1 AND u.code LIKE $2`,
+      [f.orgId, `%ULLOI66%${s}`],
+    );
+    expect(n?.n).toBe(3);
+  });
 });

@@ -111,6 +111,25 @@ export async function listImportRows(actor: Actor, batchId: string, filter: RowF
   return { items: rows.map((r) => redactRow(actor, r)), page: page.page, pageSize: page.pageSize, total: total?.n ?? 0 };
 }
 
+export interface ImportAccountOption {
+  id: string;
+  channel: string;
+  label: string;
+  status: string;
+}
+
+/**
+ * Tài khoản kênh để chọn làm nguồn cho lô nhập (công ty có nhiều tài khoản Airbnb/Booking.com).
+ * `required` đúng theo cùng luật với `importNeedsAccountChoice` ở service: có kênh nào đang có từ 2 tài khoản.
+ */
+export async function importAccountOptions(actor: Actor) {
+  assertCan(actor, "import.preview");
+  const items = await query<ImportAccountOption>("SELECT id, channel, label, status FROM connector_accounts WHERE org_id = $1 ORDER BY channel, label", [actor.orgId]);
+  const perChannel = new Map<string, number>();
+  for (const a of items) perChannel.set(a.channel, (perChannel.get(a.channel) ?? 0) + 1);
+  return { items, required: [...perChannel.values()].some((n) => n > 1) };
+}
+
 /** Số sản phẩm / alias hiện có — để người nhập biết tra phòng đang dựa trên gì. */
 export async function importCatalogOverview(actor: Actor) {
   assertCan(actor, "import.preview");
