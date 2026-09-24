@@ -208,3 +208,35 @@ describe("iCal — giữ chỗ theo lịch kênh", () => {
     await createBooking(f.actors.vn_staff, bookingInput(f.units.r1, d(30), d(32)));
   });
 });
+
+describe("iCal — hai kênh cùng một phòng", () => {
+  it("chỗ do kênh kia giữ không sinh cảnh báo 'hệ thống bận mà kênh trống'", async () => {
+    const f = await makeFixture();
+    const today = todayOps();
+    const d = (n: number) => addDays(today, n);
+
+    // Kênh A (Airbnb) bán 3 đêm và giữ chỗ trong hệ thống.
+    const a = await feedForR1(f, "two-a");
+    await setIcalHoldMode(f.actors.admin, a.id, "block");
+    await syncFeed(a.id, feedOf(ics([{ start: d(10), end: d(13), uid: "a1" }])));
+    const held = (await blocksOf(f.units.r1)).filter((b) => b.active);
+    expect(held).toHaveLength(1);
+
+    // Kênh B (Booking.com) cùng phòng, lịch trống — không được coi là lệch.
+    const listing = (await queryOne<{ id: string }>(
+      "INSERT INTO channel_listings (org_id, unit_id, channel, listing_name, status) SELECT org_id, id, 'booking_com', 'Kênh B', 'active' FROM units WHERE id = $1 RETURNING id",
+      [f.units.r1],
+    ))!.id;
+    const b = await addIcalFeed(f.actors.admin, { listingId: listing, url: "https://ical.booking.com/v1/export?t=two-b" });
+    await syncFeed(b.id, feedOf(ics([])));
+    expect(await query("SELECT id FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [b.id])).toHaveLength(0);
+
+    // Còn chặn do người vận hành tạo tay thì vẫn báo lệch như cũ.
+    await createInventoryBlock(f.actors.admin, { unitId: f.units.r1, startDate: d(20), endDate: d(22), reason: "Sơn lại tường" });
+    await query("UPDATE inventory_blocks SET created_at = created_at - interval '12 hours' WHERE source = 'manual'");
+    await query("UPDATE resource_claims SET created_at = created_at - interval '12 hours' WHERE block_id IN (SELECT id FROM inventory_blocks WHERE source = 'manual')");
+    await syncFeed(b.id, feedOf(ics([])));
+    const openB = await query<{ kind: string }>("SELECT kind FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [b.id]);
+    expect(openB.map((r) => r.kind)).toEqual(["system_busy_channel_free"]);
+  });
+});

@@ -138,7 +138,7 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
       feed.hold_mode === "block"
         ? await applyHolds(tx, { id: feed.id, org_id: feed.org_id, unit_id: feed.unit_id, channel: feed.channel }, ranges, from, to)
         : { created: 0, released: 0, skipped: 0 };
-    const systemNights = await systemBusyNights(tx, feed.org_id, feed.unit_id, from, to);
+    const systemNights = await systemBusyNights(tx, feed.org_id, feed.unit_id, from, to, feed.id);
     const missingInSystem = [...channelNights].filter((n) => !systemNights.all.has(n));
     const missingOnChannel = [...systemNights.settled].filter((n) => !channelNights.has(n));
     const found = [
@@ -176,19 +176,25 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
 }
 
 /** Đêm hệ thống đang giữ trên tài nguyên của sản phẩm. `settled` bỏ các claim quá mới (kênh chưa kịp nhập). */
-async function systemBusyNights(q: Queryable, orgId: string, unitId: string, from: string, to: string) {
-  const { rows } = await q.query<{ start: string; end: string; created_at: Date }>(
-    `SELECT lower(c.stay)::text AS start, upper(c.stay)::text AS "end", c.created_at
+async function systemBusyNights(q: Queryable, orgId: string, unitId: string, from: string, to: string, feedId?: string) {
+  // fromOtherFeed: đêm bận chỉ vì LỊCH CỦA KÊNH KHÁC đang giữ chỗ (ví dụ Airbnb bán, ta chặn tồn).
+  // Kênh đang đồng bộ không biết gì về đơn của kênh kia nên luôn báo "trống" — đó không phải lệch lịch,
+  // và app chỉ đọc chứ không đẩy ngược lên kênh. Đếm vào "all" (để không báo thiếu), bỏ khỏi "settled"
+  // (để không sinh cảnh báo giả "hệ thống bận mà kênh trống").
+  const { rows } = await q.query<{ start: string; end: string; created_at: Date; from_other_feed: boolean }>(
+    `SELECT lower(c.stay)::text AS start, upper(c.stay)::text AS "end", c.created_at,
+            (b.id IS NOT NULL AND b.source = 'ical' AND b.ical_feed_id IS DISTINCT FROM $5::uuid) AS from_other_feed
        FROM resource_claims c
+       LEFT JOIN inventory_blocks b ON b.id = c.block_id
       WHERE c.org_id = $1 AND c.active
         AND c.resource_id IN (SELECT resource_id FROM unit_resources WHERE unit_id = $2)
         AND c.stay && daterange($3::date, $4::date)`,
-    [orgId, unitId, from, to],
+    [orgId, unitId, from, to, feedId ?? null],
   );
   const cutoff = now().getTime() - GRACE_HOURS * 3600_000;
   return {
     all: nightsOf(rows, from, to),
-    settled: nightsOf(rows.filter((r) => new Date(r.created_at).getTime() < cutoff), from, to),
+    settled: nightsOf(rows.filter((r) => !r.from_other_feed && new Date(r.created_at).getTime() < cutoff), from, to),
   };
 }
 
