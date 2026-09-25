@@ -10,6 +10,7 @@ import { isPaused } from "@/modules/automation/switches";
 import { enqueueStaffNotification } from "@/modules/notifications/enqueue";
 import type { FindGroundedAnswer, GroundedAnswer, GroundingQuery } from "@/modules/qa/contract";
 import type { AiComposeResult, ComposeGuestReply } from "./ai-compose";
+import type { MediaResult } from "./transport";
 import { type IncomingAttachment, storeAttachments } from "./media";
 import {
   TICKET_CATEGORIES,
@@ -44,6 +45,8 @@ export interface InboxDeps {
   /** Không truyền ⇒ không dùng AI (kiểm thử truyền findAnswer + send nên mặc định không gọi AI). */
   composeAi?: ComposeGuestReply;
   send: (orgId: string, connectorId: string, toJidOrPhone: string, text: string, opts?: { maxWaitMs?: number }) => Promise<SendResult>;
+  /** Lấy nội dung ảnh/clip của tin vừa nhận. Không truyền ⇒ dùng Evolution thật. */
+  fetchMedia?: (orgId: string, connectorId: string, rawMessage: unknown) => Promise<MediaResult>;
 }
 
 async function defaultDeps(): Promise<InboxDeps> {

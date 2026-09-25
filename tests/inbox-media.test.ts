@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryOne } from "@/lib/db";
-import { parseEvolutionPayload } from "@/modules/inbox/evolution";
+import { generateWebhookToken, handleEvolutionWebhook, hashWebhookToken, parseEvolutionPayload } from "@/modules/inbox/evolution";
 import { MAX_MEDIA_BYTES } from "@/modules/inbox/media";
 import { ingestInboundMessage } from "@/modules/inbox/service";
 import { readObject } from "@/modules/photos/storage";
@@ -42,7 +42,71 @@ function upsertPayload(body: Record<string, unknown>) {
   return { event: "messages.upsert", data: { key: { remoteJid: "36301234567@s.whatsapp.net", id: uid(), fromMe: false }, pushName: "Nguoi don", messageTimestamp: 1758700000, ...body } };
 }
 
+/** Payload ảnh THẬT của Evolution 2.3.7: chỉ mô tả tệp, không hề có base64 (đo 25/09/2026). */
+function imageUpsert(id: string) {
+  return JSON.stringify({
+    event: "messages.upsert",
+    instance: "test",
+    data: {
+      key: { remoteJid: "36301234567@s.whatsapp.net", fromMe: false, id },
+      pushName: "Nguoi don",
+      message: {
+        imageMessage: {
+          url: "https://mmg.whatsapp.net/v/t62.7118-24/xxx.enc",
+          mimetype: "image/jpeg",
+          directPath: "/v/t62.7118-24/xxx.enc",
+          mediaKey: { 0: 1, 1: 2 },
+          height: 1600,
+          width: 1200,
+        },
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    },
+  });
+}
+
+async function webhookConnector(f: Fixture) {
+  const token = generateWebhookToken();
+  const row = await queryOne<{ id: string }>(
+    "INSERT INTO connector_accounts (org_id, channel, label, status, webhook_secret_hash) VALUES ($1,'whatsapp',$2,'testing',$3) RETURNING id",
+    [f.orgId, `WA ${uid()}`, hashWebhookToken(token)],
+  );
+  return { connectorId: row!.id, token };
+}
+
+const stub = () => ({ findAnswer: vi.fn(async () => null), send: vi.fn(async () => ({ ok: true as const, externalId: uid() })) });
+
 describe("tệp gửi vào tổng đài WhatsApp", () => {
+  it("webhook không kèm nội dung ⇒ hỏi kênh giải mã, gửi kèm CẢ object tin", async () => {
+    const { connectorId, token } = await webhookConnector(fixture);
+    const data = jpeg(uid());
+    const fetchMedia = vi.fn(async () => ({ ok: true as const, base64: data.toString("base64") }));
+    const res = await handleEvolutionWebhook(connectorId, token, imageUpsert(uid()), { ...stub(), fetchMedia });
+    expect(res.status).toBe(200);
+    expect(fetchMedia).toHaveBeenCalledTimes(1);
+    // Gửi mỗi mã tin thì Evolution trả "Message not found" — phải có phần message.
+    const sent = fetchMedia.mock.calls[0][2] as { key?: unknown; message?: unknown };
+    expect(sent.key).toBeTruthy();
+    expect(sent.message).toBeTruthy();
+    const row = await queryOne<{ attachments: { storageKey?: string; sha256?: string }[] }>(
+      "SELECT attachments FROM messages WHERE org_id = $1 AND direction = 'in' ORDER BY created_at DESC LIMIT 1",
+      [fixture.orgId],
+    );
+    expect(row!.attachments[0].storageKey).toBeTruthy();
+    expect(await readObject(row!.attachments[0].storageKey!)).toEqual(data);
+  });
+
+  it("kênh trả lỗi ⇒ tin nhắn vẫn vào, ghi rõ vì sao thiếu ảnh", async () => {
+    const { connectorId, token } = await webhookConnector(fixture);
+    const fetchMedia = vi.fn(async () => ({ ok: false as const, reason: "http_404" }));
+    await handleEvolutionWebhook(connectorId, token, imageUpsert(uid()), { ...stub(), fetchMedia });
+    const row = await queryOne<{ attachments: { error?: string }[] }>(
+      "SELECT attachments FROM messages WHERE org_id = $1 AND direction = 'in' ORDER BY created_at DESC LIMIT 1",
+      [fixture.orgId],
+    );
+    expect(row!.attachments[0].error).toBe("khong_lay_duoc: http_404");
+  });
+
   it("bóc được kiểu tệp, tên tệp và nội dung base64 từ webhook", () => {
     const { upserts } = parseEvolutionPayload(
       upsertPayload({ message: { imageMessage: { mimetype: "image/jpeg", caption: "phong 5001 xong roi" }, base64: jpeg("a").toString("base64") } }),

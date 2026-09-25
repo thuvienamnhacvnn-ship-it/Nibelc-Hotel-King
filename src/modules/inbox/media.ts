@@ -63,6 +63,8 @@ export interface IncomingAttachment {
   mimeType: string | null;
   fileName: string | null;
   base64: string | null;
+  /** Vì sao hỏi kênh mà không lấy được nội dung — ghi lại để biết đường sửa. */
+  fetchError?: string;
 }
 
 /** Phần mở rộng suy từ kiểu MIME; kiểu lạ thì không nhận (không đoán theo tên người gửi đặt). */
@@ -74,7 +76,7 @@ export function extensionForMime(mimeType: string | null): string | null {
 /** Ghi một tệp; hỏng thì trả về bản ghi có `error` chứ không ném — một tệp lỗi không được làm mất cả tin nhắn. */
 export async function storeAttachment(orgId: string, conversationId: string, att: IncomingAttachment): Promise<StoredAttachment> {
   const base: StoredAttachment = { kind: att.kind, mimeType: att.mimeType, fileName: att.fileName?.slice(0, 200) ?? null, bytes: null };
-  if (!att.base64) return { ...base, error: "khong_co_noi_dung" };
+  if (!att.base64) return { ...base, error: att.fetchError ? `khong_lay_duoc: ${att.fetchError}` : "khong_co_noi_dung" };
 
   const ext = extensionForMime(att.mimeType);
   if (!ext) return { ...base, error: "kieu_tep_khong_nhan" };

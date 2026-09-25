@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { query, queryOne } from "@/lib/db";
-import { generateWebhookToken, handleEvolutionWebhook, hashWebhookToken } from "@/modules/inbox/evolution";
+import { WEBHOOK_MAX_BYTES, generateWebhookToken, handleEvolutionWebhook, hashWebhookToken } from "@/modules/inbox/evolution";
 import { SEND_LIMITS } from "@/modules/inbox/limits";
 import { GUEST_PLACEHOLDER, getConversationDetail, listConversations } from "@/modules/inbox/queries";
 import { phoneDigits } from "@/modules/inbox/rules";
@@ -264,12 +264,13 @@ describe("N — @lid, webhook đọc luồng, che tên khách", () => {
 
   it("webhook: sai token ⇒ 401 mà không đọc body; đúng token + body chunked quá lớn ⇒ 413 và dừng đọc sớm", async () => {
     const { connectorId, token } = await whatsappConnector(fixture);
-    const bad = trackedStream(8 * 1024 * 1024);
+    const bad = trackedStream(WEBHOOK_MAX_BYTES * 2);
     expect((await handleEvolutionWebhook(connectorId, "sai", bad.stream)).status).toBe(401);
     expect(bad.pulled()).toBeLessThanOrEqual(64 * 1024); // chỉ phần ReadableStream tự kéo sẵn, không đọc tiếp
-    const big = trackedStream(8 * 1024 * 1024);
+    // Bám theo hằng số: trần đã nới lên để ảnh base64 lọt qua, bài kiểm phải nới theo chứ không ghim số cũ.
+    const big = trackedStream(WEBHOOK_MAX_BYTES * 2);
     expect((await handleEvolutionWebhook(connectorId, token, big.stream)).status).toBe(413);
-    expect(big.pulled()).toBeLessThan(1024 * 1024);
+    expect(big.pulled()).toBeLessThan(WEBHOOK_MAX_BYTES + 1024 * 1024);
   });
 
   it("thiếu booking.view_guest_contact (bp_staff, manager_viewer) ⇒ không thấy tên/SĐT khách trong danh sách và chi tiết", async () => {

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { query, queryOne } from "@/lib/db";
 import { type InboundMessage, type InboxDeps, ingestInboundMessage } from "./service";
+import { fetchMediaBase64 } from "./transport";
 
 /**
  * Webhook Evolution API v2. Payload là dữ liệu KHÔNG tin cậy: giới hạn kích thước, chỉ bóc trường cần,
@@ -81,8 +82,10 @@ export interface ParsedAttachment {
   kind: string;
   mimeType: string | null;
   fileName: string | null;
-  /** Nội dung tệp dạng base64 nếu webhook có kèm; không có thì null. */
+  /** Nội dung tệp dạng base64; webhook không kèm thì lấy sau bằng `fetchMediaBase64`. */
   base64: string | null;
+  /** Vì sao hỏi Evolution mà không lấy được nội dung. */
+  fetchError?: string;
 }
 
 export interface ParsedUpsert {
@@ -93,6 +96,8 @@ export interface ParsedUpsert {
   text: string | null;
   attachments: ParsedAttachment[];
   occurredAt: Date | null;
+  /** Object tin gốc — cần nguyên vẹn để nhờ Evolution giải mã tệp (xem `fetchMediaBase64`). */
+  raw: unknown;
 }
 
 export interface ParsedStatus {
@@ -131,6 +136,7 @@ export function parseEvolutionPayload(payload: unknown): { event: string; upsert
         text: content.text,
         attachments: content.attachments,
         occurredAt: Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000) : null,
+        raw: d,
       });
     } else if (event === "messages.update") {
       const id = str(d.keyId) ?? str(obj(d.key)?.id) ?? str(d.messageId);
@@ -233,6 +239,25 @@ function shapeOf(value: unknown, depth = 0): unknown {
   return `<${typeof value}>`;
 }
 
+/**
+ * Webhook chỉ mang mô tả tệp (url + mediaKey), không mang nội dung — kể cả khi đã bật `webhookBase64`
+ * (đo trên Evolution 2.3.7 ngày 25/09). Nên phải hỏi lại ngay lúc này: URL trên CDN của WhatsApp có
+ * hạn, để lát nữa mới lấy là mất. Lấy hỏng thì vẫn cho tin nhắn đi tiếp, chỉ ghi lý do.
+ */
+async function fillMissingMedia(connector: WebhookConnector, u: ParsedUpsert, deps?: Partial<InboxDeps>) {
+  const need = u.attachments.some((a) => a.kind !== "location" && !a.base64);
+  if (!need) return;
+  const fetchMedia = deps?.fetchMedia ?? fetchMediaBase64;
+  const res = await fetchMedia(connector.org_id, connector.id, u.raw);
+  if (!res.ok) {
+    for (const a of u.attachments) if (a.kind !== "location" && !a.base64) a.fetchError = res.reason;
+    return;
+  }
+  // Một tin WhatsApp chỉ mang một tệp, nên nội dung trả về thuộc về tệp đang thiếu.
+  const target = u.attachments.find((a) => a.kind !== "location" && !a.base64);
+  if (target) target.base64 = res.base64;
+}
+
 /** Bước 3 — xử lý payload của connector đã xác thực. */
 export async function processEvolutionPayload(connector: WebhookConnector, rawBody: string, deps?: Partial<InboxDeps>): Promise<WebhookResult> {
   if (Buffer.byteLength(rawBody, "utf8") > WEBHOOK_MAX_BYTES) return TOO_LARGE;
@@ -252,7 +277,9 @@ export async function processEvolutionPayload(connector: WebhookConnector, rawBo
   let duplicates = 0;
   let statusUpdates = 0;
   for (const u of parsed.upserts) {
-    const input: InboundMessage = { orgId: connector.org_id, connectorId: connector.id, channel: "whatsapp", ...u, isDemo: connector.is_demo };
+    await fillMissingMedia(connector, u, deps);
+    const { raw: _raw, ...rest } = u;
+    const input: InboundMessage = { orgId: connector.org_id, connectorId: connector.id, channel: "whatsapp", ...rest, isDemo: connector.is_demo };
     const res = await ingestInboundMessage(input, deps);
     if (res.status === "duplicate") duplicates++;
     else stored++;

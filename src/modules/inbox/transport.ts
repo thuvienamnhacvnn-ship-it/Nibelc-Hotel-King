@@ -140,6 +140,53 @@ export async function sendWhatsAppText(orgId: string, connectorId: string, toJid
   return result;
 }
 
+/** Đường gọi Evolution của một connector; thiếu cấu hình thì trả null. */
+async function evolutionEndpoint(orgId: string, connectorId: string) {
+  const connector = await queryOne<{ channel: string; status: string; config: Record<string, unknown> | null }>(
+    "SELECT channel, status, config FROM connector_accounts WHERE id = $1 AND org_id = $2",
+    [connectorId, orgId],
+  );
+  if (!connector || connector.channel !== "whatsapp" || connector.status === "demo" || connector.status === "not_configured") return null;
+  const cfg = connector.config ?? {};
+  const baseUrl = (typeof cfg.evolutionApiUrl === "string" && cfg.evolutionApiUrl) || process.env.EVOLUTION_API_URL || "";
+  const instance = (typeof cfg.evolutionInstance === "string" && cfg.evolutionInstance) || process.env.EVOLUTION_INSTANCE || "";
+  const apiKey = process.env.EVOLUTION_API_KEY || "";
+  if (!baseUrl || !instance || !apiKey) return null;
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), instance, apiKey };
+}
+
+export const MEDIA_FETCH_TIMEOUT_MS = 30_000;
+
+export type MediaResult = { ok: true; base64: string } | { ok: false; reason: string };
+
+/**
+ * Lấy nội dung ảnh/clip của một tin vừa nhận.
+ *
+ * PHẢI gửi cả object tin (`key` + `message`), không phải mỗi mã tin: Evolution chỉ đi tra kho lịch sử
+ * khi thiếu phần `message`, mà kho đó không bật nên tra là "Message not found" (đã dính 19/09).
+ * Có đủ object thì nó giải mã thẳng từ `url` + `mediaKey` trong payload, không cần lịch sử.
+ *
+ * Bật `webhookBase64` KHÔNG đủ: bản 2.3.7 vẫn không kèm nội dung vào webhook (đã đo 25/09).
+ */
+export async function fetchMediaBase64(orgId: string, connectorId: string, rawMessage: unknown): Promise<MediaResult> {
+  const ep = await evolutionEndpoint(orgId, connectorId);
+  if (!ep) return { ok: false, reason: "not_configured" };
+  try {
+    const res = await fetch(`${ep.baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(ep.instance)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: ep.apiKey },
+      body: JSON.stringify({ message: rawMessage, convertToMp4: false }),
+      signal: AbortSignal.timeout(MEDIA_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+    const json = (await res.json().catch(() => null)) as { base64?: unknown } | null;
+    const b64 = json?.base64;
+    return typeof b64 === "string" && b64.length > 0 ? { ok: true, base64: b64 } : { ok: false, reason: "khong_co_base64" };
+  } catch (error) {
+    return { ok: false, reason: (error as Error)?.name === "TimeoutError" ? "timeout" : "network_error" };
+  }
+}
+
 /**
  * Lỗi mà yêu cầu CÓ THỂ đã tới Evolution (hết giờ, mất kết nối giữa chừng, 5xx, 2xx không mã tin):
  * không biết khách đã nhận hay chưa ⇒ không được tự gửi lại.
