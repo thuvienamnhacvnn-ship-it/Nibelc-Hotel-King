@@ -14,6 +14,11 @@ export function newStorageKey(orgId: string, taskId: string, ext: string): strin
   return ["org", orgId, "tasks", taskId, `${crypto.randomUUID()}.${ext}`].join("/");
 }
 
+/** Tệp khách/đội gửi vào hộp thư. Cùng gốc lưu với ảnh bằng chứng nên cùng một luật đọc có kiểm quyền. */
+export function newInboxStorageKey(orgId: string, conversationId: string, ext: string): string {
+  return ["org", orgId, "inbox", conversationId, `${crypto.randomUUID()}.${ext}`].join("/");
+}
+
 function resolveKey(key: string): string {
   const root = uploadRoot();
   const full = path.resolve(root, ...key.split("/"));

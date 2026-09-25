@@ -33,28 +33,51 @@ function normalizeEvent(name: unknown): string {
   return typeof name === "string" ? name.trim().toLowerCase().replace(/_/g, ".") : "";
 }
 
-/** Bóc chữ từ các dạng tin phổ biến; ảnh/tệp chỉ ghi loại, không lưu nội dung nhị phân. */
-function extractContent(message: Json | null): { text: string | null; attachments: { kind: string }[] } {
+/**
+ * Bóc chữ và mô tả tệp. Nội dung nhị phân chỉ có khi instance bật `webhookBase64` — Evolution
+ * đặt nó ở `data.message.base64` (bản khác để ở `data.base64`), nên nhận cả hai chỗ.
+ * Không bật thì vẫn ghi nhận là có tệp, chỉ thiếu nội dung.
+ */
+function extractContent(message: Json | null, outer: Json | null): { text: string | null; attachments: ParsedAttachment[] } {
   if (!message) return { text: null, attachments: [] };
   const ext = obj(message.extendedTextMessage);
   const text = str(message.conversation) ?? str(ext?.text) ?? null;
-  const attachments: { kind: string }[] = [];
+  const base64 = str(message.base64) ?? str(outer?.base64) ?? null;
+  const attachments: ParsedAttachment[] = [];
+  let caption: string | null = null;
   for (const [key, kind] of [
     ["imageMessage", "image"],
     ["videoMessage", "video"],
     ["audioMessage", "audio"],
     ["documentMessage", "document"],
+    ["documentWithCaptionMessage", "document"],
     ["stickerMessage", "sticker"],
     ["locationMessage", "location"],
   ] as const) {
-    const m = obj(message[key]);
-    if (m) {
-      attachments.push({ kind });
-      const caption = str(m.caption);
-      if (caption && !text) return { text: caption, attachments };
-    }
+    let m = obj(message[key]);
+    // Tệp kèm lời nhắn bọc thêm một lớp: documentWithCaptionMessage.message.documentMessage
+    if (m && key === "documentWithCaptionMessage") m = obj(obj(m.message)?.documentMessage) ?? m;
+    if (!m) continue;
+    // Vị trí không phải tệp: không có gì để tải.
+    const hasFile = kind !== "location";
+    attachments.push({
+      kind,
+      mimeType: hasFile ? str(m.mimetype) : null,
+      fileName: hasFile ? str(m.fileName) ?? str(m.title) : null,
+      // Một tin chỉ mang một tệp, nên base64 của tin thuộc về tệp đó.
+      base64: hasFile ? base64 : null,
+    });
+    caption = caption ?? str(m.caption);
   }
-  return { text, attachments };
+  return { text: text ?? caption, attachments };
+}
+
+export interface ParsedAttachment {
+  kind: string;
+  mimeType: string | null;
+  fileName: string | null;
+  /** Nội dung tệp dạng base64 nếu webhook có kèm; không có thì null. */
+  base64: string | null;
 }
 
 export interface ParsedUpsert {
@@ -63,7 +86,7 @@ export interface ParsedUpsert {
   senderHandle: string | null;
   senderName: string | null;
   text: string | null;
-  attachments: { kind: string }[];
+  attachments: ParsedAttachment[];
   occurredAt: Date | null;
 }
 
@@ -93,7 +116,7 @@ export function parseEvolutionPayload(payload: unknown): { event: string; upsert
         ignored++;
         continue;
       }
-      const content = extractContent(obj(d.message));
+      const content = extractContent(obj(d.message), d);
       const ts = Number(d.messageTimestamp);
       upserts.push({
         threadId: remoteJid,

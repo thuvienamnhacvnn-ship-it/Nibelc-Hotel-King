@@ -10,6 +10,7 @@ import { isPaused } from "@/modules/automation/switches";
 import { enqueueStaffNotification } from "@/modules/notifications/enqueue";
 import type { FindGroundedAnswer, GroundedAnswer, GroundingQuery } from "@/modules/qa/contract";
 import type { AiComposeResult, ComposeGuestReply } from "./ai-compose";
+import { type IncomingAttachment, storeAttachments } from "./media";
 import {
   TICKET_CATEGORIES,
   TICKET_PRIORITIES,
@@ -99,7 +100,8 @@ export interface InboundMessage {
   senderHandle: string | null;
   senderName: string | null;
   text: string | null;
-  attachments?: { kind: string }[];
+  /** Tệp kèm theo. `base64` chỉ có khi instance bật `webhookBase64`; ghi ra đĩa ngay lúc nhận. */
+  attachments?: IncomingAttachment[];
   occurredAt: Date | null;
   isDemo?: boolean;
 }
@@ -203,6 +205,9 @@ export async function ingestInboundMessage(input: InboundMessage, deps?: Partial
     }
 
     const occurred = input.occurredAt && !Number.isNaN(input.occurredAt.getTime()) ? input.occurredAt : null;
+    // Tệp ghi ra đĩa ngay: Evolution không giữ lịch sử nên tải lại sau là mất. Tệp hỏng chỉ ghi lý do,
+    // không làm rớt cả tin nhắn — mất chữ còn tệ hơn mất tệp.
+    const attachments = input.attachments?.length ? await storeAttachments(input.orgId, conv.id, input.attachments, tx) : [];
     const msg = await tx.query<{ id: string }>(
       `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_user_id, author_name, external_message_id, body, attachments, status, source_occurred_at)
        VALUES ($1,$2,'in',$3,$4,$5,$6,$7,$8,'received',$9) RETURNING id`,
@@ -214,7 +219,7 @@ export async function ingestInboundMessage(input: InboundMessage, deps?: Partial
         input.senderName?.slice(0, 200) ?? null,
         externalId,
         text,
-        JSON.stringify(input.attachments ?? []),
+        JSON.stringify(attachments),
         occurred,
       ],
     );
