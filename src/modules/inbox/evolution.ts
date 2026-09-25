@@ -216,6 +216,23 @@ export async function readLimitedBody(stream: ReadableStream<Uint8Array> | null,
   return { ok: true, text: new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks)) };
 }
 
+/**
+ * Bản đồ TÊN TRƯỜNG của payload — chỉ tên, không bao giờ kèm giá trị, để dò xem nhà cung cấp
+ * đặt nội dung tệp ở đâu mà không làm lộ nội dung tin. Chuỗi dài chỉ ghi độ dài.
+ */
+function shapeOf(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value.length ? [shapeOf(value[0], depth + 1)] : [];
+  if (typeof value === "object") {
+    if (depth > 4) return "{...}";
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = shapeOf(v, depth + 1);
+    return out;
+  }
+  if (typeof value === "string") return value.length > 40 ? `<chuoi ${value.length}>` : "<chuoi>";
+  return `<${typeof value}>`;
+}
+
 /** Bước 3 — xử lý payload của connector đã xác thực. */
 export async function processEvolutionPayload(connector: WebhookConnector, rawBody: string, deps?: Partial<InboxDeps>): Promise<WebhookResult> {
   if (Buffer.byteLength(rawBody, "utf8") > WEBHOOK_MAX_BYTES) return TOO_LARGE;
@@ -226,6 +243,11 @@ export async function processEvolutionPayload(connector: WebhookConnector, rawBo
     return { status: 400, body: { error: { code: "invalid_json", message: "Body không phải JSON hợp lệ." } } };
   }
   const parsed = parseEvolutionPayload(payload);
+  // Có tệp mà không có nội dung: ghi lại bản đồ trường để biết nhà cung cấp để base64 ở đâu.
+  // Bật bằng env INBOX_DEBUG_SHAPE=1, chỉ dùng lúc dò, và không bao giờ in giá trị.
+  if (process.env.INBOX_DEBUG_SHAPE === "1" && parsed.upserts.some((u) => u.attachments.some((a) => a.kind !== "location" && !a.base64))) {
+    console.warn("[webhook evolution] tep khong co noi dung — ban do truong:", JSON.stringify(shapeOf(payload)));
+  }
   let stored = 0;
   let duplicates = 0;
   let statusUpdates = 0;
