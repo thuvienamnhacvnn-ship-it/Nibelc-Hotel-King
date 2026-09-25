@@ -137,6 +137,36 @@ describe("trợ lý trực nội bộ", () => {
     expect(await outbox(conv)).toHaveLength(1);
   });
 
+  it("nhân viên gửi ảnh không kèm chữ vẫn được trả lời (không im lặng)", async () => {
+    await openSwitches(fixture);
+    const conv = await conversation(fixture, "staff", "");
+    await query("UPDATE messages SET body = NULL, attachments = $2 WHERE conversation_id = $1", [
+      conv,
+      JSON.stringify([{ kind: "image", mimeType: "image/jpeg", bytes: 90244, storageKey: "org/x/inbox/y/z.jpg", sha256: "a".repeat(64) }]),
+    ]);
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ em nhận được ảnh rồi, cảm ơn anh ạ.", note: "cam on da gui anh" });
+    const res = await runStaffAssist();
+    expect(res.answered).toBe(1);
+    expect(await outbox(conv)).toHaveLength(1);
+    // Trợ lý phải biết là có ảnh và ảnh đã lấy được, nếu không thì nó cảm ơn khơi khơi.
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(String(sent.messages[0].content)).toContain("đã nhận và lưu xong");
+  });
+
+  it("ảnh chưa lấy được nội dung thì nói rõ là lỗi bên mình", async () => {
+    await openSwitches(fixture);
+    const conv = await conversation(fixture, "staff", "");
+    await query("UPDATE messages SET body = NULL, attachments = $2 WHERE conversation_id = $1", [
+      conv,
+      JSON.stringify([{ kind: "image", mimeType: "image/jpeg", bytes: null, error: "khong_lay_duoc: http_404" }]),
+    ]);
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ ảnh có tới nhưng bên em chưa lấy được nội dung, em đang sửa ạ.", note: "bao loi" });
+    await runStaffAssist();
+    expect(await outbox(conv)).toHaveLength(1);
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(String(sent.messages[0].content)).toContain("CHƯA lấy được nội dung");
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");

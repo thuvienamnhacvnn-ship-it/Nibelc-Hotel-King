@@ -80,7 +80,7 @@ describe("tệp gửi vào tổng đài WhatsApp", () => {
   it("webhook không kèm nội dung ⇒ hỏi kênh giải mã, gửi kèm CẢ object tin", async () => {
     const { connectorId, token } = await webhookConnector(fixture);
     const data = jpeg(uid());
-    const fetchMedia = vi.fn(async () => ({ ok: true as const, base64: data.toString("base64") }));
+    const fetchMedia = vi.fn(async (_orgId: string, _connectorId: string, _raw: unknown) => ({ ok: true as const, base64: data.toString("base64") }));
     const res = await handleEvolutionWebhook(connectorId, token, imageUpsert(uid()), { ...stub(), fetchMedia });
     expect(res.status).toBe(200);
     expect(fetchMedia).toHaveBeenCalledTimes(1);
@@ -98,7 +98,7 @@ describe("tệp gửi vào tổng đài WhatsApp", () => {
 
   it("kênh trả lỗi ⇒ tin nhắn vẫn vào, ghi rõ vì sao thiếu ảnh", async () => {
     const { connectorId, token } = await webhookConnector(fixture);
-    const fetchMedia = vi.fn(async () => ({ ok: false as const, reason: "http_404" }));
+    const fetchMedia = vi.fn(async (_orgId: string, _connectorId: string, _raw: unknown) => ({ ok: false as const, reason: "http_404" }));
     await handleEvolutionWebhook(connectorId, token, imageUpsert(uid()), { ...stub(), fetchMedia });
     const row = await queryOne<{ attachments: { error?: string }[] }>(
       "SELECT attachments FROM messages WHERE org_id = $1 AND direction = 'in' ORDER BY created_at DESC LIMIT 1",

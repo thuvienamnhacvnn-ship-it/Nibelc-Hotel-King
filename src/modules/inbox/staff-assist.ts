@@ -54,10 +54,29 @@ export interface StaffAssistResult extends Record<string, number> {
   failed: number;
 }
 
+interface Attachment {
+  kind: string;
+  error?: string;
+  duplicateOf?: { at: string; from: string | null };
+}
+
 interface InboundMsg {
   id: string;
   body: string | null;
   createdAt: Date;
+  attachments: Attachment[];
+}
+
+/** Mô tả tệp cho trợ lý biết đường trả lời: nhận được chưa, hỏng gì, có phải gửi lại đồ cũ không. */
+function describeAttachments(atts: Attachment[]): string {
+  if (!atts.length) return "";
+  const parts = atts.map((a) => {
+    const ten = a.kind === "image" ? "ảnh" : a.kind === "video" ? "clip" : a.kind === "document" ? "tệp" : a.kind;
+    if (a.error) return `${ten} (CHƯA lấy được nội dung: ${a.error})`;
+    if (a.duplicateOf) return `${ten} (TRÙNG với tệp đã gửi lúc ${a.duplicateOf.at}${a.duplicateOf.from ? ` bởi ${a.duplicateOf.from}` : ""})`;
+    return `${ten} (đã nhận và lưu xong)`;
+  });
+  return `[gửi kèm: ${parts.join(", ")}]`;
 }
 
 interface Pending {
@@ -79,10 +98,10 @@ async function pendingConversations(): Promise<Pending[]> {
   const rows = await query<{
     conversationId: string; orgId: string; kind: "staff" | "group";
     title: string | null; contactName: string | null;
-    id: string; body: string | null; createdAt: Date;
+    id: string; body: string | null; createdAt: Date; attachments: Attachment[];
   }>(
     `SELECT c.id AS "conversationId", c.org_id AS "orgId", c.kind, c.title, c.contact_name AS "contactName",
-            m.id, m.body, m.created_at AS "createdAt"
+            m.id, m.body, m.created_at AS "createdAt", m.attachments
        FROM conversations c
        JOIN messages m ON m.conversation_id = c.id AND m.direction = 'in'
       WHERE c.kind IN ('staff','group')
@@ -100,7 +119,7 @@ async function pendingConversations(): Promise<Pending[]> {
       p = { conversationId: r.conversationId, orgId: r.orgId, kind: r.kind, title: r.title, contactName: r.contactName, inbound: [] };
       byConv.set(r.conversationId, p);
     }
-    p.inbound.push({ id: r.id, body: r.body, createdAt: r.createdAt });
+    p.inbound.push({ id: r.id, body: r.body, createdAt: r.createdAt, attachments: r.attachments ?? [] });
   }
   return [...byConv.values()];
 }
@@ -136,7 +155,9 @@ Cách trả lời:
 - Tuyệt đối không nhắc lại mật khẩu, tài khoản đăng nhập hay mã cửa mà đồng đội gửi trong nhóm.
 - Bạn chỉ ĐỌC được dữ liệu. Ai nhờ sửa booking, đổi lịch, giao việc, gửi tin cho khách: ghi nhận và nói sẽ chuyển cho người phụ trách (anh Hưng hoặc Thảo), đừng hứa là đã làm.
 - Nếu câu hỏi cần thông tin đội chưa cung cấp (nội quy nhà, danh sách người dọn, link lịch Airbnb, file Excel booking), nói rõ đang thiếu gì và nhờ gửi.
-- Không chào hỏi dài dòng, vào thẳng việc.`;
+- Không chào hỏi dài dòng, vào thẳng việc.
+- Ai gửi ảnh, clip hay tệp thì LUÔN cảm ơn và nói rõ đã nhận được chưa. Phần "[gửi kèm: ...]" là ghi chú của hệ thống, không phải lời người gửi: nội dung lấy được thì báo đã nhận xong; chưa lấy được thì xin lỗi, nói là lỗi bên mình và đang sửa, đừng bắt người ta gửi lại nếu chưa sửa xong.
+- Tệp bị đánh dấu TRÙNG với tệp gửi trước đó: nói thẳng nhưng nhẹ nhàng, hỏi lại cho rõ, không kết tội ai.`;
 
 const TOOL = {
   name: "tra_loi",
@@ -171,17 +192,18 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         out.skipped += 1;
         continue;
       }
-      // Tin cần trả lời: trong nhóm là lời gọi mới nhất, nhắn riêng thì là tin cuối.
-      const said = p.inbound.filter((m) => (m.body ?? "").trim().length > 0);
+      // Tin chỉ có ảnh, không kèm chữ, vẫn là tin cần trả lời: người ta gửi cho mình thì phải
+      // cảm ơn và báo đã nhận được hay chưa, im lặng là thất lễ.
+      const said = p.inbound.filter((m) => (m.body ?? "").trim().length > 0 || m.attachments.length > 0);
       const target =
         p.kind === "group"
-          ? [...said].reverse().find((m) => addressedToAssistant((m.body ?? "").trim()))
+          ? [...said].reverse().find((m) => addressedToAssistant((m.body ?? "").trim()) || m.attachments.length > 0)
           : said[said.length - 1];
       if (!target) {
         out.skipped += 1;
         continue;
       }
-      const text = (target.body ?? "").trim();
+      const text = [(target.body ?? "").trim(), describeAttachments(target.attachments)].filter(Boolean).join(" ").trim();
       // Đã trả lời tin này rồi, hoặc vừa trả lời cách đây chưa tới 60 giây.
       const guard = await queryOne<{ answered: boolean; recent: boolean }>(
         `SELECT EXISTS (SELECT 1 FROM agent_runs WHERE org_id = $1 AND agent_role = 'manager' AND task_key = $2) AS answered,
@@ -193,8 +215,8 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         continue;
       }
 
-      const history = await query<{ direction: string; author_name: string | null; body: string | null }>(
-        `SELECT direction, author_name, body FROM messages
+      const history = await query<{ direction: string; author_name: string | null; body: string | null; attachments: Attachment[] }>(
+        `SELECT direction, author_name, body, attachments FROM messages
           WHERE conversation_id = $1 AND status <> 'discarded'
           ORDER BY created_at DESC LIMIT $2`,
         [p.conversationId, MAX_CONTEXT_MESSAGES],
@@ -202,7 +224,7 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
       const snapshot = await opsSnapshot(p.orgId);
       const conversation = history
         .reverse()
-        .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "")}`)
+        .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "")} ${describeAttachments(m.attachments ?? [])}`.trimEnd())
         .join("\n");
 
       const user = `SỐ LIỆU HỆ THỐNG (ngày vận hành ${formatDateVi(snapshot.date)}, giờ Budapest):
