@@ -108,6 +108,35 @@ describe("trợ lý trực nội bộ", () => {
     expect(await outbox(called)).toHaveLength(1);
   });
 
+  it("trong nhóm, bấm @ số tổng đài cũng là gọi trợ lý", async () => {
+    await openSwitches(fixture);
+    const self = process.env.WHATSAPP_SELF_MENTIONS;
+    process.env.WHATSAPP_SELF_MENTIONS = "36704092957,58579830710497";
+    try {
+      const conv = await conversation(fixture, "group", "@58579830710497 e nhận thông tin c gửi ở trên đây");
+      mockClaude({ action: "reply", message: "Dạ em nhận rồi ạ.", note: "duoc goi bang @so" });
+      await runStaffAssist();
+      expect(await outbox(conv)).toHaveLength(1);
+    } finally {
+      if (self === undefined) delete process.env.WHATSAPP_SELF_MENTIONS;
+      else process.env.WHATSAPP_SELF_MENTIONS = self;
+    }
+  });
+
+  it("lời gọi trong nhóm bị tin khác đè lên vẫn được trả lời", async () => {
+    await openSwitches(fixture);
+    const conv = await conversation(fixture, "group", "Dương Quá ơi cho xin số liệu hôm nay");
+    // Sau lời gọi, đội còn nhắn tiếp với nhau — trước đây trợ lý chỉ nhìn tin cuối nên im luôn.
+    await query(
+      "INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status) VALUES ($1,$2,'in','staff','Diu',$3,'received')",
+      [fixture.orgId, conv, "ok chị nhé"],
+    );
+    mockClaude({ action: "reply", message: "Dạ số liệu hôm nay đây ạ.", note: "tra loi loi goi truoc do" });
+    const res = await runStaffAssist();
+    expect(res.answered).toBe(1);
+    expect(await outbox(conv)).toHaveLength(1);
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");

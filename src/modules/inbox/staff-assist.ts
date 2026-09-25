@@ -12,7 +12,8 @@ import { isPaused } from "@/modules/automation/switches";
  *   - Chỉ chạy khi công tắc agent:staff_assist bật (mặc định tắt) và kênh whatsapp_staff không dừng.
  *   - Trợ lý chỉ ĐỌC số liệu rồi trả lời; không sửa booking, không đổi lịch, không gửi tin cho khách.
  *     Ai nhờ làm việc đó thì nó ghi nhận và nói sẽ chuyển cho người phụ trách.
- *   - Trong nhóm chỉ trả lời khi có người gọi tên (dương quá / trợ lý / bot / hệ thống), tránh nói chen.
+ *   - Trong nhóm chỉ trả lời khi có người gọi: gọi tên (dương quá / trợ lý / bot / hệ thống) HOẶC bấm @
+ *     đúng số của tổng đài — tránh nói chen. WhatsApp gửi lời gọi @ dưới dạng số, không phải tên.
  *   - Mỗi hội thoại tối đa 1 tin tự động trong 60 giây và không trả lời hai lần cho cùng một tin.
  *   - Tin ghi author_type 'system' (không phải 'bot'): luật "người tiếp quản thì bot im lặng" chỉ dành cho hội thoại khách.
  *   - Tin đội gửi được che số điện thoại/email trước khi đưa sang Claude.
@@ -21,6 +22,30 @@ import { isPaused } from "@/modules/automation/switches";
 const MENTION = /(dương quá|duong qua|trợ lý|tro ly|hệ thống|he thong|\bbot\b)/i;
 const REPLY_GAP_MS = 60_000;
 const MAX_CONTEXT_MESSAGES = 8;
+/** Nhìn lại bao xa. Để rộng để tin gửi lúc đêm vẫn được trả lời khi worker vừa khởi động lại. */
+const LOOKBACK_HOURS = 48;
+
+/**
+ * Số WhatsApp của chính tổng đài, để biết lúc nào nhóm đang gọi mình.
+ * Trong nhóm không ai gõ tên — họ bấm @ rồi chọn danh bạ, WhatsApp gửi đi dưới dạng "@<số>",
+ * và số đó có thể là LID (số ẩn danh nội bộ) chứ không phải số điện thoại. Khai cả hai trong env,
+ * ngăn cách bằng dấu phẩy: WHATSAPP_SELF_MENTIONS=36704092957,58579830710497
+ */
+function selfHandles(): string[] {
+  return (process.env.WHATSAPP_SELF_MENTIONS ?? "")
+    .split(",")
+    .map((s) => s.replace(/[^0-9]/g, ""))
+    .filter((s) => s.length >= 8);
+}
+
+/** Tin này có đang gọi trợ lý không: gọi tên, hoặc @ đúng số của tổng đài. */
+export function addressedToAssistant(text: string): boolean {
+  if (MENTION.test(text)) return true;
+  const ids = selfHandles();
+  if (ids.length === 0) return false;
+  const mentioned = text.match(/@([0-9]{8,})/g)?.map((m) => m.slice(1)) ?? [];
+  return mentioned.some((m) => ids.includes(m));
+}
 
 export interface StaffAssistResult extends Record<string, number> {
   checked: number;
@@ -29,36 +54,55 @@ export interface StaffAssistResult extends Record<string, number> {
   failed: number;
 }
 
+interface InboundMsg {
+  id: string;
+  body: string | null;
+  createdAt: Date;
+}
+
 interface Pending {
   conversationId: string;
   orgId: string;
   kind: "staff" | "group";
   title: string | null;
   contactName: string | null;
-  lastInboundId: string;
-  lastInboundBody: string | null;
-  lastInboundAt: Date;
+  /** Các tin vào chưa được trả lời, cũ trước mới sau. */
+  inbound: InboundMsg[];
 }
 
-/** Hội thoại đội đang có tin chờ trả lời: tin vào mới nhất chưa có tin ra nào sau nó. */
+/**
+ * Hội thoại đội đang có tin chờ trả lời: mọi tin vào kể từ tin ra gần nhất.
+ * Lấy cả loạt chứ không chỉ tin cuối, vì trong nhóm người ta hay gọi trợ lý rồi nhắn tiếp
+ * vài câu với nhau — chỉ nhìn tin cuối thì lời gọi bị trôi mất và trợ lý im luôn.
+ */
 async function pendingConversations(): Promise<Pending[]> {
-  return query<Pending>(
+  const rows = await query<{
+    conversationId: string; orgId: string; kind: "staff" | "group";
+    title: string | null; contactName: string | null;
+    id: string; body: string | null; createdAt: Date;
+  }>(
     `SELECT c.id AS "conversationId", c.org_id AS "orgId", c.kind, c.title, c.contact_name AS "contactName",
-            m.id AS "lastInboundId", m.body AS "lastInboundBody", m.created_at AS "lastInboundAt"
+            m.id, m.body, m.created_at AS "createdAt"
        FROM conversations c
-       JOIN LATERAL (
-         SELECT id, body, created_at FROM messages
-          WHERE conversation_id = c.id AND direction = 'in'
-          ORDER BY created_at DESC LIMIT 1
-       ) m ON true
+       JOIN messages m ON m.conversation_id = c.id AND m.direction = 'in'
       WHERE c.kind IN ('staff','group')
-        AND NOT EXISTS (
-          SELECT 1 FROM messages o
-           WHERE o.conversation_id = c.id AND o.direction = 'out' AND o.created_at > m.created_at
-        )
-        AND m.created_at > now() - interval '6 hours'
-      ORDER BY m.created_at`,
+        AND m.created_at > now() - ($1 || ' hours')::interval
+        AND m.created_at > COALESCE(
+              (SELECT max(o.created_at) FROM messages o WHERE o.conversation_id = c.id AND o.direction = 'out'),
+              to_timestamp(0))
+      ORDER BY c.id, m.created_at`,
+    [String(LOOKBACK_HOURS)],
   );
+  const byConv = new Map<string, Pending>();
+  for (const r of rows) {
+    let p = byConv.get(r.conversationId);
+    if (!p) {
+      p = { conversationId: r.conversationId, orgId: r.orgId, kind: r.kind, title: r.title, contactName: r.contactName, inbound: [] };
+      byConv.set(r.conversationId, p);
+    }
+    p.inbound.push({ id: r.id, body: r.body, createdAt: r.createdAt });
+  }
+  return [...byConv.values()];
 }
 
 /** Số liệu vận hành hôm nay để trợ lý trả lời có căn cứ (không đưa tên khách ra ngoài). */
@@ -89,6 +133,7 @@ Cách trả lời:
 - Tiếng Việt, xưng "em", gọi người nhắn là "anh"/"chị"/tên họ. Ngắn gọn, tối đa 6 câu, không dùng markdown.
 - Chỉ dùng số liệu trong phần "SỐ LIỆU HỆ THỐNG" được cung cấp. Không có số liệu thì nói thẳng là chưa có, KHÔNG đoán.
 - Không bịa tên khách, mã đặt phòng, giá, mã cửa.
+- Tuyệt đối không nhắc lại mật khẩu, tài khoản đăng nhập hay mã cửa mà đồng đội gửi trong nhóm.
 - Bạn chỉ ĐỌC được dữ liệu. Ai nhờ sửa booking, đổi lịch, giao việc, gửi tin cho khách: ghi nhận và nói sẽ chuyển cho người phụ trách (anh Hưng hoặc Thảo), đừng hứa là đã làm.
 - Nếu câu hỏi cần thông tin đội chưa cung cấp (nội quy nhà, danh sách người dọn, link lịch Airbnb, file Excel booking), nói rõ đang thiếu gì và nhờ gửi.
 - Không chào hỏi dài dòng, vào thẳng việc.`;
@@ -126,21 +171,22 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         out.skipped += 1;
         continue;
       }
-      const text = (p.lastInboundBody ?? "").trim();
-      if (!text) {
+      // Tin cần trả lời: trong nhóm là lời gọi mới nhất, nhắn riêng thì là tin cuối.
+      const said = p.inbound.filter((m) => (m.body ?? "").trim().length > 0);
+      const target =
+        p.kind === "group"
+          ? [...said].reverse().find((m) => addressedToAssistant((m.body ?? "").trim()))
+          : said[said.length - 1];
+      if (!target) {
         out.skipped += 1;
         continue;
       }
-      // Trong nhóm: chỉ lên tiếng khi được gọi tên.
-      if (p.kind === "group" && !MENTION.test(text)) {
-        out.skipped += 1;
-        continue;
-      }
+      const text = (target.body ?? "").trim();
       // Đã trả lời tin này rồi, hoặc vừa trả lời cách đây chưa tới 60 giây.
       const guard = await queryOne<{ answered: boolean; recent: boolean }>(
         `SELECT EXISTS (SELECT 1 FROM agent_runs WHERE org_id = $1 AND agent_role = 'manager' AND task_key = $2) AS answered,
                 EXISTS (SELECT 1 FROM messages WHERE conversation_id = $3 AND direction = 'out' AND created_at > now() - ($4 || ' milliseconds')::interval) AS recent`,
-        [p.orgId, `staff_assist:${p.lastInboundId}`, p.conversationId, String(REPLY_GAP_MS)],
+        [p.orgId, `staff_assist:${target.id}`, p.conversationId, String(REPLY_GAP_MS)],
       );
       if (guard?.answered || guard?.recent) {
         out.skipped += 1;
@@ -179,7 +225,7 @@ Trả lời tin cuối cùng của nhân viên.`;
         `INSERT INTO agent_runs (org_id, agent_role, task_key, entity_type, entity_id, tools_allowed, status, attempt, started_at, heartbeat_at, input)
          VALUES ($1,'manager',$2,'message',$3,'{tra_loi}','running',1,now(),now(),$4)
          ON CONFLICT (org_id, agent_role, task_key) DO NOTHING RETURNING id`,
-        [p.orgId, `staff_assist:${p.lastInboundId}`, p.lastInboundId, JSON.stringify({ model, conversationId: p.conversationId, kind: p.kind })],
+        [p.orgId, `staff_assist:${target.id}`, target.id, JSON.stringify({ model, conversationId: p.conversationId, kind: p.kind })],
       );
       if (!run) {
         out.skipped += 1;
