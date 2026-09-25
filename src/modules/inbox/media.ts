@@ -15,8 +15,11 @@ import { newInboxStorageKey, removeOrphan, sha256, writeObject } from "@/modules
  * không chạy. Chữ trong ảnh cũng không phải chỉ dẫn cho hệ thống.
  */
 
-/** 20 MB: WhatsApp cho gửi ảnh tối đa ~16 MB, clip ~16 MB; rộng hơn một chút cho phần mã hoá base64. */
-export const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+/**
+ * 16 MB — đúng mức WhatsApp cho gửi ảnh và clip. Lớn hơn thì base64 vượt `WEBHOOK_MAX_BYTES`
+ * và webhook bị chặn từ vòng ngoài, nên có nhận cũng không tới nơi.
+ */
+export const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",

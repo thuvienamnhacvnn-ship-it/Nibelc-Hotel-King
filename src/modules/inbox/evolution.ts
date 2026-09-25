@@ -7,7 +7,12 @@ import { type InboundMessage, type InboxDeps, ingestInboundMessage } from "./ser
  * không log nội dung tin. Xác thực bằng header `x-webhook-token` so với băm sha256 lưu ở connector.
  */
 
-export const WEBHOOK_MAX_BYTES = 256 * 1024;
+/**
+ * Bật `webhookBase64` thì nội dung ảnh/clip nằm ngay trong payload, mã base64 phình khoảng 4/3 lần:
+ * tệp 16 MB thành ~21,4 MB. Để 256 KB như lúc chỉ nhận chữ là mọi tấm ảnh đều bị chặn.
+ * Mở rộng vẫn an toàn vì token được kiểm TRƯỚC khi đọc body — người lạ không đẩy được payload lớn vào đây.
+ */
+export const WEBHOOK_MAX_BYTES = 24 * 1024 * 1024;
 
 export function hashWebhookToken(token: string): string {
   return crypto.createHash("sha256").update(token, "utf8").digest("hex");
