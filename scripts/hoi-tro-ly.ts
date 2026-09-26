@@ -15,7 +15,11 @@ function args() {
   const argv = process.argv.slice(2);
   const i = argv.indexOf("--ten");
   const asName = i >= 0 ? argv[i + 1] : undefined;
-  const question = argv.filter((a, k) => a !== "--ten" && k !== i + 1).join(" ").trim();
+  // Không có --ten thì i = -1; phải kiểm i >= 0 trước, không thì loại nhầm tham số đầu (chính là câu hỏi).
+  const question = argv
+    .filter((_a, k) => i < 0 || (k !== i && k !== i + 1))
+    .join(" ")
+    .trim();
   return { asName, question };
 }
 
