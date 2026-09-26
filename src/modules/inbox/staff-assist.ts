@@ -227,6 +227,56 @@ async function opsGroupConversation(orgId: string) {
   );
 }
 
+/**
+ * Lời nhắc gửi sang Claude. Dùng CHUNG cho worker và cho `askAssistantOnce`, để hỏi thử cũng
+ * đúng y như lúc chạy thật — hai bản lời nhắc khác nhau thì thử xong vẫn không biết thật ra sao.
+ *
+ * Hội thoại TRƯỚC, số liệu SAU: số cũ nằm trong hội thoại, đặt số mới ở cuối để nó không nhặt lại số cũ.
+ * (Đã dính 26/09: báo "79 đêm chặn" trong khi hệ thống có 442 — số 79 là của báo cáo mấy ngày trước.)
+ */
+export function buildAssistPrompt(input: { where: string; conversation: string; snapshot: Awaited<ReturnType<typeof opsSnapshot>> }) {
+  const { where, conversation, snapshot } = input;
+  const missing = missingItems(snapshot);
+  return `HỘI THOẠI (${where}):
+${conversation}
+
+SỐ LIỆU HỆ THỐNG — ĐỌC LÚC NÀY, ngày vận hành ${formatDateVi(snapshot.date)}, giờ Budapest:
+- Nhà đang có trong hệ thống: ${snapshot.nha}; sản phẩm bán: ${snapshot.san_pham}; link lịch kênh: ${snapshot.link_lich}
+- Số đêm đang bị chặn theo lịch kênh: ${snapshot.dem_chan}
+- Booking chi tiết trong hệ thống: ${snapshot.booking} (lịch iCal chỉ cho biết đêm bận, không kèm tên khách; muốn đủ thì cần nhập file Excel hoặc nối API kênh)
+- Xung đột lịch đang mở: ${snapshot.xung_dot}; lệch lịch với kênh: ${snapshot.lech_lich}
+- Việc dọn đang mở: ${snapshot.don_mo}, trong đó quá hạn: ${snapshot.don_qua_han}
+- Câu trả lời khách đã duyệt trong kho Q&A: ${snapshot.qa}
+- Địa chỉ hệ thống: https://vietduc-hub.com
+${missing.length ? `- Đang còn thiếu: ${missing.join("; ")}.` : "- Không còn thiếu dữ liệu nền nào."}
+
+BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối SỐ LIỆU HỆ THỐNG ngay trên. Con số xuất hiện trong phần HỘI THOẠI là của những ngày trước, ĐÃ CŨ, không được dùng lại.
+
+Trả lời tin cuối cùng của nhân viên.`;
+}
+
+/**
+ * Hỏi trợ lý một câu và lấy ngay câu trả lời, KHÔNG ghi tin, KHÔNG gửi WhatsApp cho ai.
+ * Để Sếp và đội thử trực tiếp mà không làm ồn hộp thư của người khác.
+ */
+export async function askAssistantOnce(orgId: string, question: string, asName = "Sếp Hưng") {
+  const snapshot = await opsSnapshot(orgId);
+  const user = buildAssistPrompt({
+    where: `nhắn riêng với ${asName}`,
+    conversation: `${asName}: ${redactForAi(question)}`,
+    snapshot,
+  });
+  const res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 700 });
+  return {
+    reply: String(res.input.message ?? "").trim(),
+    groupMessage: String(res.input.group_message ?? "").trim(),
+    note: res.input.note,
+    model: res.model,
+    costUsd: Number(res.costUsd.toFixed(6)),
+    snapshot,
+  };
+}
+
 /** Một lượt: tìm hội thoại đội đang chờ, hỏi Claude, rồi xếp tin trả lời vào hàng đợi gửi. */
 export async function runStaffAssist(): Promise<StaffAssistResult> {
   const out: StaffAssistResult = { checked: 0, answered: 0, skipped: 0, failed: 0, postedToGroup: 0 };
@@ -275,25 +325,11 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "")} ${describeAttachments(m.attachments ?? [])}`.trimEnd())
         .join("\n");
 
-      const missing = missingItems(snapshot);
-      // Hội thoại TRƯỚC, số liệu SAU: số cũ nằm trong hội thoại, đặt số mới ở cuối để nó không nhặt lại số cũ.
-      // (Đã dính 26/09: báo "79 đêm chặn" trong khi hệ thống có 442 — số 79 là của báo cáo mấy ngày trước.)
-      const user = `HỘI THOẠI (${p.kind === "group" ? `nhóm ${p.title ?? ""}` : `nhắn riêng với ${p.contactName ?? "nhân viên"}`}):
-${conversation}
-
-SỐ LIỆU HỆ THỐNG — ĐỌC LÚC NÀY, ngày vận hành ${formatDateVi(snapshot.date)}, giờ Budapest:
-- Nhà đang có trong hệ thống: ${snapshot.nha}; sản phẩm bán: ${snapshot.san_pham}; link lịch kênh: ${snapshot.link_lich}
-- Số đêm đang bị chặn theo lịch kênh: ${snapshot.dem_chan}
-- Booking chi tiết trong hệ thống: ${snapshot.booking} (lịch iCal chỉ cho biết đêm bận, không kèm tên khách; muốn đủ thì cần nhập file Excel hoặc nối API kênh)
-- Xung đột lịch đang mở: ${snapshot.xung_dot}; lệch lịch với kênh: ${snapshot.lech_lich}
-- Việc dọn đang mở: ${snapshot.don_mo}, trong đó quá hạn: ${snapshot.don_qua_han}
-- Câu trả lời khách đã duyệt trong kho Q&A: ${snapshot.qa}
-- Địa chỉ hệ thống: https://vietduc-hub.com
-${missing.length ? `- Đang còn thiếu: ${missing.join("; ")}.` : "- Không còn thiếu dữ liệu nền nào."}
-
-BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối SỐ LIỆU HỆ THỐNG ngay trên. Con số xuất hiện trong phần HỘI THOẠI là của những ngày trước, ĐÃ CŨ, không được dùng lại.
-
-Trả lời tin cuối cùng của nhân viên.`;
+      const user = buildAssistPrompt({
+        where: p.kind === "group" ? `nhóm ${p.title ?? ""}` : `nhắn riêng với ${p.contactName ?? "nhân viên"}`,
+        conversation,
+        snapshot,
+      });
 
       const model = guestModel();
       const run = await queryOne<{ id: string }>(
