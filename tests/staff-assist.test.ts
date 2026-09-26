@@ -182,6 +182,19 @@ describe("trợ lý trực nội bộ", () => {
     expect((await outbox(riêng))[0].body).toContain("báo lên nhóm");
   });
 
+  it("điền tin nhóm mà bỏ trống câu trả lời: vẫn đăng nhóm và vẫn xác nhận với người nhờ", async () => {
+    await openSwitches(fixture);
+    const group = await conversation(fixture, "group", "Chào mọi người");
+    await query("INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status) VALUES ($1,$2,'out','system','Dương Quá — trợ lý','da nhan','sent')", [fixture.orgId, group]);
+    const riêng = await conversation(fixture, "staff", "Em báo lên nhóm giục mọi người giúp anh");
+    // Model thật đã làm đúng kiểu này: có group_message, message rỗng.
+    mockClaude({ action: "reply", message: "", group_message: "Nhờ mọi người gửi nốt thông tin giúp em ạ.", note: "bao len nhom" });
+    const res = await runStaffAssist();
+    expect(res.postedToGroup).toBe(1);
+    expect((await outbox(group)).some((m) => m.body.includes("gửi nốt thông tin"))).toBe(true);
+    expect((await outbox(riêng))[0].body).toBeTruthy();
+  });
+
   it("từ trong nhóm thì không tự đăng thêm tin lên nhóm (tránh tự nói với mình)", async () => {
     await openSwitches(fixture);
     const group = await conversation(fixture, "group", "Dương Quá ơi báo lên nhóm giúp cái");

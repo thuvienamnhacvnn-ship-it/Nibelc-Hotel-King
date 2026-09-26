@@ -200,7 +200,7 @@ const TOOL = {
     type: "object",
     properties: {
       action: { type: "string", enum: ["reply", "skip"], description: "reply = trả lời; skip = tin không cần trả lời (ví dụ chỉ là 'ok', 'cảm ơn')." },
-      message: { type: "string", description: "Nội dung trả lời (khi action=reply)." },
+      message: { type: "string", description: "Nội dung trả lời cho người đang nhắn. LUÔN phải có khi action=reply, kể cả khi đã điền group_message." },
       group_message: {
         type: "string",
         description:
@@ -354,7 +354,14 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
       }
 
       const usage = { model: res.model, inputTokens: res.inputTokens, outputTokens: res.outputTokens, costUsd: Number(res.costUsd.toFixed(6)) };
-      const body = String(res.input.message ?? "").trim();
+      /**
+       * Đăng lên nhóm khi người nhắn riêng yêu cầu. Chỉ từ hội thoại riêng: nếu cho phép cả trong nhóm
+       * thì tin nó đăng lại thành tin mới của nhóm và có thể tự kích hoạt vòng sau — nói chuyện một mình.
+       */
+      const groupBody = p.kind === "staff" ? String(res.input.group_message ?? "").trim() : "";
+      // Model hay điền group_message rồi bỏ trống message. Trống mà bỏ qua cả lượt thì tin nhóm mất luôn,
+      // người nhờ cũng không nhận được xác nhận nào — nên tự trả lời thay bằng một câu xác nhận.
+      const body = String(res.input.message ?? "").trim() || (groupBody ? "Dạ em đã báo lên nhóm ạ." : "");
       if (res.input.action !== "reply" || !body) {
         await query("UPDATE agent_runs SET status = 'succeeded', output = $2, cost_minor = $3, finished_at = now() WHERE id = $1", [
           run.id,
@@ -365,11 +372,6 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         continue;
       }
 
-      /**
-       * Đăng lên nhóm khi người nhắn riêng yêu cầu. Chỉ từ hội thoại riêng: nếu cho phép cả trong nhóm
-       * thì tin nó đăng lại thành tin mới của nhóm và có thể tự kích hoạt vòng sau — nói chuyện một mình.
-       */
-      const groupBody = p.kind === "staff" ? String(res.input.group_message ?? "").trim() : "";
       const opsGroup = groupBody ? await opsGroupConversation(p.orgId) : null;
       const postedToGroup = Boolean(groupBody && opsGroup);
 
