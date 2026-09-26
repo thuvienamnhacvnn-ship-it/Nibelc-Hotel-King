@@ -278,6 +278,22 @@ BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối S�
 Trả lời tin cuối cùng của nhân viên.`;
 }
 
+/**
+ * Câu hứa sẽ báo lên nhóm. Model rất hay nói "em sẽ báo lên nhóm" rồi bỏ trống group_message —
+ * hứa ở tương lai để khỏi làm ngay. Lời dặn không chặn được nên phải bắt ở đây.
+ */
+const HUA_BAO_NHOM = /(báo|đăng|nhắc|giục|thông báo|gửi)[^.]{0,40}(lên|vào|trong)\s+(nhóm|group)/i;
+
+/** Có hứa mà không làm không: cần gọi lại một lần với lệnh dứt khoát. */
+export function loiHuaChuaLam(reply: string, groupMessage: string): boolean {
+  return HUA_BAO_NHOM.test(reply) && groupMessage.trim().length === 0;
+}
+
+const LENH_LAM_NGAY = `
+LỖI Ở LƯỢT TRƯỚC: bạn nói sẽ báo lên nhóm nhưng để trống group_message, tức là hứa mà không làm.
+Lần này BẮT BUỘC điền group_message với nội dung đầy đủ cần đăng lên nhóm, và trong message chỉ nói
+là đã báo (đã làm rồi), không nói "sẽ".`;
+
 /** Đăng một tin lên nhóm vận hành dưới tên trợ lý; worker gửi ở vòng kế tiếp. */
 export async function postToOpsGroup(orgId: string, body: string) {
   const text = body.trim();
@@ -307,7 +323,11 @@ export async function askAssistantOnce(orgId: string, question: string, asName =
     snapshot,
     roster: await teamRoster(orgId),
   });
-  const res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 700 });
+  let res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 700 });
+  if (loiHuaChuaLam(String(res.input.message ?? ""), String(res.input.group_message ?? ""))) {
+    res = await callTool<ToolOut>({ system: SYSTEM, user: `${user}
+${LENH_LAM_NGAY}`, tool: TOOL, model: guestModel(), maxTokens: 700 });
+  }
   return {
     reply: String(res.input.message ?? "").trim(),
     groupMessage: String(res.input.group_message ?? "").trim(),
@@ -388,6 +408,11 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
       let res: Awaited<ReturnType<typeof callTool<ToolOut>>>;
       try {
         res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model, maxTokens: 700 });
+        // Hứa báo lên nhóm mà không soạn tin: gọi lại đúng MỘT lần với lệnh dứt khoát.
+        if (p.kind === "staff" && loiHuaChuaLam(String(res.input.message ?? ""), String(res.input.group_message ?? ""))) {
+          res = await callTool<ToolOut>({ system: SYSTEM, user: `${user}
+${LENH_LAM_NGAY}`, tool: TOOL, model, maxTokens: 700 });
+        }
       } catch (error) {
         const e = error as AiError;
         await query("UPDATE agent_runs SET status = $2, error = $3, finished_at = now() WHERE id = $1", [run.id, e?.code === "timeout" ? "timed_out" : "failed", e?.message ?? "loi AI"]);

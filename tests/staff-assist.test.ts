@@ -229,6 +229,30 @@ describe("trợ lý trực nội bộ", () => {
     expect(String(sent.system)).toContain("không dồn việc cho người đang nhắn");
   });
 
+  it("hứa 'sẽ báo lên nhóm' mà không soạn tin ⇒ gọi lại một lần và đăng thật", async () => {
+    await openSwitches(fixture);
+    const group = await conversation(fixture, "group", "Chào mọi người");
+    await query("INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status) VALUES ($1,$2,'out','system','Dương Quá — trợ lý','da nhan','sent')", [fixture.orgId, group]);
+    await conversation(fixture, "staff", "Em báo lên nhóm giúp anh");
+    // Lượt đầu hứa suông, lượt sau mới soạn tin — đúng kiểu model thật đã làm.
+    let lan = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      lan += 1;
+      const input =
+        lan === 1
+          ? { action: "reply", message: "Dạ em sẽ báo lên nhóm ngay ạ.", note: "hua" }
+          : { action: "reply", message: "Dạ em đã báo lên nhóm ạ.", group_message: "Nhờ mọi người gửi nốt thông tin giúp em.", note: "da lam" };
+      return new Response(JSON.stringify({ model: "claude-haiku-4-5-20251001", content: [{ type: "tool_use", name: "tra_loi", input }], usage: { input_tokens: 900, output_tokens: 70 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const res = await runStaffAssist();
+    expect(lan).toBe(2);
+    expect(res.postedToGroup).toBe(1);
+    expect((await outbox(group)).some((m) => m.body.includes("gửi nốt thông tin"))).toBe(true);
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");
