@@ -42,7 +42,7 @@ export interface ToolCallResult<T> {
 
 export class AiError extends Error {
   constructor(
-    public code: "not_configured" | "timeout" | "http_error" | "bad_output",
+    public code: "not_configured" | "timeout" | "http_error" | "bad_output" | "truncated",
     message: string,
     public status?: number,
   ) {
@@ -92,9 +92,16 @@ export async function callTool<T>(opts: { system: string; user: string; tool: To
   }
   const data = (await res.json()) as {
     model?: string;
+    stop_reason?: string;
     content?: { type: string; name?: string; input?: unknown }[];
     usage?: { input_tokens?: number; output_tokens?: number };
   };
+  /**
+   * Hết hạn mức chữ giữa chừng: Claude vẫn trả về khối tool_use nhưng JSON bên trong dở dang,
+   * thiếu trường mà mình không hề biết. Đã dính 26/09: trợ lý soạn báo cáo dài, bị cắt, mất luôn
+   * phần nội dung gửi nhóm — nhìn bên ngoài y như nó không muốn gửi. Coi đây là lỗi, không phải kết quả.
+   */
+  if (data.stop_reason === "max_tokens") throw new AiError("truncated", "Câu trả lời bị cắt vì vượt hạn mức chữ");
   const block = data.content?.find((c) => c.type === "tool_use" && c.name === opts.tool.name);
   if (!block || typeof block.input !== "object" || block.input === null) throw new AiError("bad_output", "Claude không trả kết quả đúng dạng");
   const inputTokens = data.usage?.input_tokens ?? 0;

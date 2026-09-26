@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { query, queryOne } from "@/lib/db";
+import { AiError, callTool } from "@/modules/ai/claude";
 import { redactForAi } from "@/modules/ai/redact";
 import { composeGuestReply } from "@/modules/inbox/ai-compose";
 import { generateWebhookToken, hashWebhookToken } from "@/modules/inbox/evolution";
@@ -66,6 +67,26 @@ function guest(f: Fixture, connectorId: string, text: string) {
     occurredAt: null,
   });
 }
+
+describe("gọi Claude", () => {
+  it("tin trả về bị cắt vì hết hạn mức chữ ⇒ coi là lỗi, không nhận kết quả dở dang", async () => {
+    // Claude vẫn trả khối tool_use nhưng JSON bên trong thiếu trường; nhận bừa là mất dữ liệu âm thầm.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          stop_reason: "max_tokens",
+          content: [{ type: "tool_use", name: "tra_loi", input: { action: "reply" } }],
+          usage: { input_tokens: 900, output_tokens: 1600 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const tool = { name: "tra_loi", description: "x", input_schema: { type: "object", properties: {}, required: [] } };
+    await expect(callTool({ system: "s", user: "u", tool })).rejects.toMatchObject({ code: "truncated" });
+    await expect(callTool({ system: "s", user: "u", tool })).rejects.toBeInstanceOf(AiError);
+  });
+});
 
 describe("che thông tin cá nhân trước khi gửi AI", () => {
   it("che email, số điện thoại, dãy số dài; giữ mã booking và ngày", () => {

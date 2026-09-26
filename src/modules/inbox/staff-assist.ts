@@ -327,10 +327,10 @@ export async function askAssistantOnce(orgId: string, question: string, asName =
     snapshot,
     roster: await teamRoster(orgId),
   });
-  let res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 700 });
+  let res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 1600 });
   if (loiHuaChuaLam(String(res.input.message ?? ""), String(res.input.group_message ?? ""))) {
     res = await callTool<ToolOut>({ system: SYSTEM, user: `${user}
-${LENH_LAM_NGAY}`, tool: TOOL, model: guestModel(), maxTokens: 700 });
+${LENH_LAM_NGAY}`, tool: TOOL, model: guestModel(), maxTokens: 1600 });
   }
   return {
     reply: String(res.input.message ?? "").trim(),
@@ -411,11 +411,11 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
 
       let res: Awaited<ReturnType<typeof callTool<ToolOut>>>;
       try {
-        res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model, maxTokens: 700 });
+        res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model, maxTokens: 1600 });
         // Hứa báo lên nhóm mà không soạn tin: gọi lại đúng MỘT lần với lệnh dứt khoát.
         if (p.kind === "staff" && loiHuaChuaLam(String(res.input.message ?? ""), String(res.input.group_message ?? ""))) {
           res = await callTool<ToolOut>({ system: SYSTEM, user: `${user}
-${LENH_LAM_NGAY}`, tool: TOOL, model, maxTokens: 700 });
+${LENH_LAM_NGAY}`, tool: TOOL, model, maxTokens: 1600 });
         }
       } catch (error) {
         const e = error as AiError;
