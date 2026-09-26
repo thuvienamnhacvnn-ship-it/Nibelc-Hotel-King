@@ -3,6 +3,7 @@ import { formatDateVi, todayOps } from "@/lib/time";
 import { AiError, aiConfigured, callTool, guestModel } from "@/modules/ai/claude";
 import { redactForAi } from "@/modules/ai/redact";
 import { isPaused } from "@/modules/automation/switches";
+import { ROLE_LABELS, type Role } from "@/modules/auth/permissions";
 
 /**
  * Trợ lý trực nội bộ: tự trả lời tin của ĐỘI (hội thoại staff và nhóm) trên WhatsApp bằng Claude.
@@ -163,6 +164,19 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
 }
 
 /**
+ * Đội hình: ai giữ vai gì. Không có cái này thì trợ lý đoán theo tên nghe thấy trong chat và
+ * dồn hết việc lên người nhắn nhiều nhất (đã dính 26/09: giao việc sức chứa cho Sếp Hưng
+ * trong khi đó là việc của quản trị hệ thống).
+ */
+export async function teamRoster(orgId: string) {
+  const rows = await query<{ full_name: string; role: Role }>(
+    "SELECT full_name, role FROM users WHERE org_id = $1 AND active AND role <> 'cleaner' ORDER BY full_name",
+    [orgId],
+  );
+  return rows.map((r) => `${r.full_name} — ${ROLE_LABELS[r.role] ?? r.role}`);
+}
+
+/**
  * Việc còn thiếu, SUY TỪ DỮ LIỆU chứ không viết cứng trong lời dặn.
  * Viết cứng thì sửa xong vẫn còn đòi (đã dính: link Airbnb đã nối đủ mà trợ lý vẫn đi giục).
  */
@@ -191,7 +205,8 @@ Cách trả lời:
 - Nếu câu hỏi cần thông tin đội chưa cung cấp (nội quy nhà, danh sách người dọn, link lịch Airbnb, file Excel booking), nói rõ đang thiếu gì và nhờ gửi.
 - Không chào hỏi dài dòng, vào thẳng việc.
 - Ai gửi ảnh, clip hay tệp thì LUÔN cảm ơn và nói rõ đã nhận được chưa. Phần "[gửi kèm: ...]" là ghi chú của hệ thống, không phải lời người gửi: nội dung lấy được thì báo đã nhận xong; chưa lấy được thì xin lỗi, nói là lỗi bên mình và đang sửa, đừng bắt người ta gửi lại nếu chưa sửa xong.
-- Tệp bị đánh dấu TRÙNG với tệp gửi trước đó: nói thẳng nhưng nhẹ nhàng, hỏi lại cho rõ, không kết tội ai.`;
+- Tệp bị đánh dấu TRÙNG với tệp gửi trước đó: nói thẳng nhưng nhẹ nhàng, hỏi lại cho rõ, không kết tội ai.
+- Khi nêu ai phải làm việc gì: chỉ dựa vào phần ĐỘI HÌNH. Không có người rõ ràng cho một việc thì ghi "chưa rõ ai phụ trách, nhờ chị quản trị hệ thống phân công" — TUYỆT ĐỐI không đoán theo tên nghe thấy trong hội thoại và không dồn việc cho người đang nhắn.`;
 
 const TOOL = {
   name: "tra_loi",
@@ -234,8 +249,13 @@ async function opsGroupConversation(orgId: string) {
  * Hội thoại TRƯỚC, số liệu SAU: số cũ nằm trong hội thoại, đặt số mới ở cuối để nó không nhặt lại số cũ.
  * (Đã dính 26/09: báo "79 đêm chặn" trong khi hệ thống có 442 — số 79 là của báo cáo mấy ngày trước.)
  */
-export function buildAssistPrompt(input: { where: string; conversation: string; snapshot: Awaited<ReturnType<typeof opsSnapshot>> }) {
-  const { where, conversation, snapshot } = input;
+export function buildAssistPrompt(input: {
+  where: string;
+  conversation: string;
+  snapshot: Awaited<ReturnType<typeof opsSnapshot>>;
+  roster?: string[];
+}) {
+  const { where, conversation, snapshot, roster = [] } = input;
   const missing = missingItems(snapshot);
   return `HỘI THOẠI (${where}):
 ${conversation}
@@ -249,6 +269,9 @@ SỐ LIỆU HỆ THỐNG — ĐỌC LÚC NÀY, ngày vận hành ${formatDateVi(
 - Câu trả lời khách đã duyệt trong kho Q&A: ${snapshot.qa}
 - Địa chỉ hệ thống: https://vietduc-hub.com
 ${missing.length ? `- Đang còn thiếu: ${missing.join("; ")}.` : "- Không còn thiếu dữ liệu nền nào."}
+${roster.length ? `
+ĐỘI HÌNH (ai giữ vai gì — chỉ giao việc theo danh sách này, không đoán):
+${roster.map((r) => `- ${r}`).join("\n")}` : ""}
 
 BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối SỐ LIỆU HỆ THỐNG ngay trên. Con số xuất hiện trong phần HỘI THOẠI là của những ngày trước, ĐÃ CŨ, không được dùng lại.
 
@@ -282,6 +305,7 @@ export async function askAssistantOnce(orgId: string, question: string, asName =
     where: `nhắn riêng với ${asName}`,
     conversation: `${asName}: ${redactForAi(question)}`,
     snapshot,
+    roster: await teamRoster(orgId),
   });
   const res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 700 });
   return {
@@ -346,6 +370,7 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         where: p.kind === "group" ? `nhóm ${p.title ?? ""}` : `nhắn riêng với ${p.contactName ?? "nhân viên"}`,
         conversation,
         snapshot,
+        roster: await teamRoster(p.orgId),
       });
 
       const model = guestModel();

@@ -215,6 +215,20 @@ describe("trợ lý trực nội bộ", () => {
     expect(prompt).toContain("ĐÃ CŨ, không được dùng lại");
   });
 
+  it("giao việc theo đội hình thật, không đoán theo tên trong chat", async () => {
+    await openSwitches(fixture);
+    await query("UPDATE users SET full_name = 'Nguyen Thi Ngoc' WHERE org_id = $1 AND role = 'admin'", [fixture.orgId]);
+    await conversation(fixture, "staff", "Còn thiếu gì thì ai phải làm em?");
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ đây ạ.", note: "phan viec" });
+    await runStaffAssist();
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    const prompt = String(sent.messages[0].content);
+    expect(prompt).toContain("ĐỘI HÌNH");
+    expect(prompt).toContain("Nguyen Thi Ngoc — Quản trị hệ thống");
+    // Luật cấm đoán nằm ở lời dặn hệ thống, không phải trong lời nhắc từng lượt.
+    expect(String(sent.system)).toContain("không dồn việc cho người đang nhắn");
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");
