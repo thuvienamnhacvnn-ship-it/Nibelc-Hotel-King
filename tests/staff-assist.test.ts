@@ -167,6 +167,41 @@ describe("trợ lý trực nội bộ", () => {
     expect(String(sent.messages[0].content)).toContain("CHƯA lấy được nội dung");
   });
 
+  it("nhờ báo lên nhóm ⇒ đăng thật lên nhóm, không hứa suông", async () => {
+    await openSwitches(fixture);
+    const group = await conversation(fixture, "group", "Chào mọi người");
+    // Nhóm đã có tin ra nên không còn chờ trả lời, chỉ còn hội thoại riêng là việc cần xử.
+    await query("INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status) VALUES ($1,$2,'out','system','Dương Quá — trợ lý','da nhan','sent')", [fixture.orgId, group]);
+    const riêng = await conversation(fixture, "staff", "Em báo lên nhóm giục mọi người cập nhật thông tin giúp anh");
+    mockClaude({ action: "reply", message: "Dạ em báo lên nhóm ngay ạ.", group_message: "Nhờ mọi người gửi giúp em: sức chứa các phòng, file Excel, danh sách người dọn.", note: "duoc nho bao len nhom" });
+    const res = await runStaffAssist();
+    expect(res.postedToGroup).toBe(1);
+    const inGroup = await outbox(group);
+    expect(inGroup).toHaveLength(2);
+    expect(inGroup.some((m) => m.body.includes("sức chứa các phòng"))).toBe(true);
+    expect((await outbox(riêng))[0].body).toContain("báo lên nhóm");
+  });
+
+  it("từ trong nhóm thì không tự đăng thêm tin lên nhóm (tránh tự nói với mình)", async () => {
+    await openSwitches(fixture);
+    const group = await conversation(fixture, "group", "Dương Quá ơi báo lên nhóm giúp cái");
+    mockClaude({ action: "reply", message: "Dạ đây ạ.", group_message: "tin them khong duoc phep", note: "test" });
+    const res = await runStaffAssist();
+    expect(res.postedToGroup).toBe(0);
+    expect(await outbox(group)).toHaveLength(1);
+  });
+
+  it("số liệu đặt SAU hội thoại và có cảnh báo số cũ, để trợ lý không nhặt lại số ngày trước", async () => {
+    await openSwitches(fixture);
+    await conversation(fixture, "staff", "Tình hình hệ thống ổn chưa em?");
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ ổn ạ.", note: "bao cao" });
+    await runStaffAssist();
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    const prompt = String(sent.messages[0].content);
+    expect(prompt.indexOf("HỘI THOẠI")).toBeLessThan(prompt.indexOf("SỐ LIỆU HỆ THỐNG"));
+    expect(prompt).toContain("ĐÃ CŨ, không được dùng lại");
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");

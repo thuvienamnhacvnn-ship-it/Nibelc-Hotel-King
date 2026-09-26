@@ -52,6 +52,8 @@ export interface StaffAssistResult extends Record<string, number> {
   answered: number;
   skipped: number;
   failed: number;
+  /** Số lần trợ lý được nhờ báo lên nhóm và đã đăng thật. */
+  postedToGroup: number;
 }
 
 interface Attachment {
@@ -130,6 +132,8 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
   const row = await queryOne<{
     nha: number; san_pham: number; link_lich: number; dem_chan: number; booking: number;
     xung_dot: number; lech_lich: number; don_mo: number; don_qua_han: number; qa: number;
+    nguoi_don: number; mau_checklist: number; lan_nhap: number; suc_chua_tam: number;
+    truc_su_co: number; nhan_bao_cao: number;
   }>(
     `SELECT (SELECT count(*)::int FROM properties WHERE org_id = $1) AS nha,
             (SELECT count(*)::int FROM units WHERE org_id = $1) AS san_pham,
@@ -140,10 +144,38 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
             (SELECT count(*)::int FROM calendar_sync_findings WHERE org_id = $1 AND status = 'open') AS lech_lich,
             (SELECT count(*)::int FROM cleaning_tasks WHERE org_id = $1 AND status NOT IN ('passed','cancelled')) AS don_mo,
             (SELECT count(*)::int FROM cleaning_tasks WHERE org_id = $1 AND status NOT IN ('passed','cancelled') AND due_at < now()) AS don_qua_han,
-            (SELECT count(*)::int FROM qa_entries WHERE org_id = $1 AND status = 'approved') AS qa`,
+            (SELECT count(*)::int FROM qa_entries WHERE org_id = $1 AND status = 'approved') AS qa,
+            (SELECT count(*)::int FROM cleaner_profiles WHERE org_id = $1) AS nguoi_don,
+            (SELECT count(*)::int FROM checklist_templates WHERE org_id = $1) AS mau_checklist,
+            (SELECT count(*)::int FROM import_batches WHERE org_id = $1) AS lan_nhap,
+            (SELECT count(*)::int FROM units WHERE org_id = $1 AND kind <> 'whole' AND capacity = 2) AS suc_chua_tam,
+            (SELECT count(*)::int FROM escalation_contacts WHERE org_id = $1) AS truc_su_co,
+            (SELECT count(*)::int FROM report_subscriptions WHERE org_id = $1) AS nhan_bao_cao`,
     [orgId],
   );
-  return { date, ...(row ?? { nha: 0, san_pham: 0, link_lich: 0, dem_chan: 0, booking: 0, xung_dot: 0, lech_lich: 0, don_mo: 0, don_qua_han: 0, qa: 0 }) };
+  return {
+    date,
+    ...(row ?? {
+      nha: 0, san_pham: 0, link_lich: 0, dem_chan: 0, booking: 0, xung_dot: 0, lech_lich: 0, don_mo: 0, don_qua_han: 0, qa: 0,
+      nguoi_don: 0, mau_checklist: 0, lan_nhap: 0, suc_chua_tam: 0, truc_su_co: 0, nhan_bao_cao: 0,
+    }),
+  };
+}
+
+/**
+ * Việc còn thiếu, SUY TỪ DỮ LIỆU chứ không viết cứng trong lời dặn.
+ * Viết cứng thì sửa xong vẫn còn đòi (đã dính: link Airbnb đã nối đủ mà trợ lý vẫn đi giục).
+ */
+export function missingItems(s: Awaited<ReturnType<typeof opsSnapshot>>): string[] {
+  const out: string[] = [];
+  if (s.suc_chua_tam > 0) out.push(`sức chứa thật của ${s.suc_chua_tam} phòng (đang tạm để 2 khách/phòng)`);
+  if (s.lan_nhap === 0) out.push("file Excel lịch đặt phòng (hiện chưa nhập lần nào nên hệ thống không có tên khách, không có tiền)");
+  if (s.nguoi_don === 0) out.push("danh sách người dọn kèm ca làm");
+  if (s.mau_checklist === 0) out.push("checklist dọn phòng và mục nào bắt buộc chụp ảnh");
+  if (s.qa < 10) out.push(`nội quy nhà và câu hỏi khách hay hỏi (kho Q&A mới có ${s.qa} câu đã duyệt)`);
+  if (s.truc_su_co === 0) out.push("ai trực nhận sự cố gấp và ai trực thay");
+  if (s.nhan_bao_cao === 0) out.push("ai nhận báo cáo đầu ngày / cuối ngày và mấy giờ");
+  return out;
 }
 
 const SYSTEM = `Bạn là "Dương Quá", trợ lý vận hành của Vietduc Hotel (căn hộ cho thuê ở Budapest). Bạn đang nhắn WhatsApp với NHÂN VIÊN trong công ty, không phải với khách.
@@ -154,6 +186,8 @@ Cách trả lời:
 - Không bịa tên khách, mã đặt phòng, giá, mã cửa.
 - Tuyệt đối không nhắc lại mật khẩu, tài khoản đăng nhập hay mã cửa mà đồng đội gửi trong nhóm.
 - Bạn chỉ ĐỌC được dữ liệu. Ai nhờ sửa booking, đổi lịch, giao việc, gửi tin cho khách: ghi nhận và nói sẽ chuyển cho người phụ trách (anh Hưng hoặc Thảo), đừng hứa là đã làm.
+- Việc DUY NHẤT bạn tự làm được ngoài trả lời: đăng một tin lên nhóm vận hành, bằng cách điền group_message. Ai nhắn riêng nhờ "báo lên nhóm", "nhắc nhóm", "giục mọi người" thì PHẢI điền group_message ngay lượt này — nói suông là hứa mà không làm. Tin lên nhóm phải nêu rõ cần gì và ai phải làm, dựa vào phần "Đang còn thiếu" trong số liệu.
+- Không bao giờ nói "em đã làm X" nếu X không nằm trong những thứ bạn vừa thực sự làm ở lượt này.
 - Nếu câu hỏi cần thông tin đội chưa cung cấp (nội quy nhà, danh sách người dọn, link lịch Airbnb, file Excel booking), nói rõ đang thiếu gì và nhờ gửi.
 - Không chào hỏi dài dòng, vào thẳng việc.
 - Ai gửi ảnh, clip hay tệp thì LUÔN cảm ơn và nói rõ đã nhận được chưa. Phần "[gửi kèm: ...]" là ghi chú của hệ thống, không phải lời người gửi: nội dung lấy được thì báo đã nhận xong; chưa lấy được thì xin lỗi, nói là lỗi bên mình và đang sửa, đừng bắt người ta gửi lại nếu chưa sửa xong.
@@ -167,6 +201,11 @@ const TOOL = {
     properties: {
       action: { type: "string", enum: ["reply", "skip"], description: "reply = trả lời; skip = tin không cần trả lời (ví dụ chỉ là 'ok', 'cảm ơn')." },
       message: { type: "string", description: "Nội dung trả lời (khi action=reply)." },
+      group_message: {
+        type: "string",
+        description:
+          "Nội dung đăng lên nhóm vận hành. CHỈ dùng khi người đang nhắn riêng yêu cầu báo/nhắc/giục lên nhóm. Không yêu cầu thì bỏ trống.",
+      },
       note: { type: "string", description: "Lý do ngắn (tiếng Việt)." },
     },
     required: ["action", "note"],
@@ -176,12 +215,21 @@ const TOOL = {
 interface ToolOut {
   action: "reply" | "skip";
   message?: string;
+  group_message?: string;
   note: string;
+}
+
+/** Hội thoại nhóm vận hành của tổ chức (nhóm hoạt động gần nhất nếu có nhiều nhóm). */
+async function opsGroupConversation(orgId: string) {
+  return queryOne<{ id: string }>(
+    "SELECT id FROM conversations WHERE org_id = $1 AND kind = 'group' ORDER BY last_message_at DESC NULLS LAST LIMIT 1",
+    [orgId],
+  );
 }
 
 /** Một lượt: tìm hội thoại đội đang chờ, hỏi Claude, rồi xếp tin trả lời vào hàng đợi gửi. */
 export async function runStaffAssist(): Promise<StaffAssistResult> {
-  const out: StaffAssistResult = { checked: 0, answered: 0, skipped: 0, failed: 0 };
+  const out: StaffAssistResult = { checked: 0, answered: 0, skipped: 0, failed: 0, postedToGroup: 0 };
   if (!aiConfigured()) return out;
   const pendings = await pendingConversations();
   for (const p of pendings) {
@@ -227,18 +275,23 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "")} ${describeAttachments(m.attachments ?? [])}`.trimEnd())
         .join("\n");
 
-      const user = `SỐ LIỆU HỆ THỐNG (ngày vận hành ${formatDateVi(snapshot.date)}, giờ Budapest):
+      const missing = missingItems(snapshot);
+      // Hội thoại TRƯỚC, số liệu SAU: số cũ nằm trong hội thoại, đặt số mới ở cuối để nó không nhặt lại số cũ.
+      // (Đã dính 26/09: báo "79 đêm chặn" trong khi hệ thống có 442 — số 79 là của báo cáo mấy ngày trước.)
+      const user = `HỘI THOẠI (${p.kind === "group" ? `nhóm ${p.title ?? ""}` : `nhắn riêng với ${p.contactName ?? "nhân viên"}`}):
+${conversation}
+
+SỐ LIỆU HỆ THỐNG — ĐỌC LÚC NÀY, ngày vận hành ${formatDateVi(snapshot.date)}, giờ Budapest:
 - Nhà đang có trong hệ thống: ${snapshot.nha}; sản phẩm bán: ${snapshot.san_pham}; link lịch kênh: ${snapshot.link_lich}
 - Số đêm đang bị chặn theo lịch kênh: ${snapshot.dem_chan}
 - Booking chi tiết trong hệ thống: ${snapshot.booking} (lịch iCal chỉ cho biết đêm bận, không kèm tên khách; muốn đủ thì cần nhập file Excel hoặc nối API kênh)
 - Xung đột lịch đang mở: ${snapshot.xung_dot}; lệch lịch với kênh: ${snapshot.lech_lich}
 - Việc dọn đang mở: ${snapshot.don_mo}, trong đó quá hạn: ${snapshot.don_qua_han}
 - Câu trả lời khách đã duyệt trong kho Q&A: ${snapshot.qa}
-- Đang chờ đội gửi: link lịch Airbnb từng phòng, file Excel lịch đặt phòng, nội quy nhà, danh sách người dọn, checklist dọn phòng.
 - Địa chỉ hệ thống: https://vietduc-hub.com
+${missing.length ? `- Đang còn thiếu: ${missing.join("; ")}.` : "- Không còn thiếu dữ liệu nền nào."}
 
-HỘI THOẠI (${p.kind === "group" ? `nhóm ${p.title ?? ""}` : `nhắn riêng với ${p.contactName ?? "nhân viên"}`}):
-${conversation}
+BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối SỐ LIỆU HỆ THỐNG ngay trên. Con số xuất hiện trong phần HỘI THOẠI là của những ngày trước, ĐÃ CŨ, không được dùng lại.
 
 Trả lời tin cuối cùng của nhân viên.`;
 
@@ -276,6 +329,14 @@ Trả lời tin cuối cùng của nhân viên.`;
         continue;
       }
 
+      /**
+       * Đăng lên nhóm khi người nhắn riêng yêu cầu. Chỉ từ hội thoại riêng: nếu cho phép cả trong nhóm
+       * thì tin nó đăng lại thành tin mới của nhóm và có thể tự kích hoạt vòng sau — nói chuyện một mình.
+       */
+      const groupBody = p.kind === "staff" ? String(res.input.group_message ?? "").trim() : "";
+      const opsGroup = groupBody ? await opsGroupConversation(p.orgId) : null;
+      const postedToGroup = Boolean(groupBody && opsGroup);
+
       await withTx(async (tx) => {
         await tx.query(
           `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
@@ -283,13 +344,22 @@ Trả lời tin cuối cùng của nhân viên.`;
           [p.orgId, p.conversationId, body.slice(0, 3000)],
         );
         await tx.query("UPDATE conversations SET last_message_at = now(), unread_count = 0, updated_at = now() WHERE id = $1", [p.conversationId]);
+        if (postedToGroup && opsGroup) {
+          await tx.query(
+            `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
+             VALUES ($1,$2,'out','system','Dương Quá — trợ lý',$3,'queued',now())`,
+            [p.orgId, opsGroup.id, groupBody.slice(0, 3000)],
+          );
+          await tx.query("UPDATE conversations SET last_message_at = now(), updated_at = now() WHERE id = $1", [opsGroup.id]);
+        }
       });
       await query("UPDATE agent_runs SET status = 'succeeded', output = $2, cost_minor = $3, finished_at = now() WHERE id = $1", [
         run.id,
-        JSON.stringify({ ...usage, action: "reply", note: res.input.note, length: body.length }),
+        JSON.stringify({ ...usage, action: "reply", note: res.input.note, length: body.length, postedToGroup }),
         Math.ceil(res.costUsd * 100),
       ]);
       out.answered += 1;
+      if (postedToGroup) out.postedToGroup += 1;
     } catch (error) {
       console.error("[staff-assist] lỗi hội thoại", p.conversationId, (error as Error)?.message);
       out.failed += 1;
