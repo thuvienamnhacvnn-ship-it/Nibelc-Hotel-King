@@ -3,29 +3,31 @@
  *
  *   npx tsx scripts/hoi-tro-ly.ts "Tình hình hệ thống thế nào?"
  *   npx tsx scripts/hoi-tro-ly.ts --ten "Sếp Ngọc" "Còn thiếu gì?"
+ *   npx tsx scripts/hoi-tro-ly.ts --dang-nhom "Báo cáo tình hình lên nhóm"   ← ĐĂNG THẬT lên nhóm
  *
  * Dùng đúng lời dặn, đúng số liệu và đúng model như lúc nó chạy thật, nên hỏi ở đây thấy gì
  * thì trên WhatsApp cũng vậy. Không ghi tin nhắn, không tốn lượt của ai, chỉ tốn tiền một lượt AI.
  */
 import { closePool, queryOne } from "@/lib/db";
 import { loadLocalEnv } from "@/lib/env";
-import { askAssistantOnce } from "@/modules/inbox/staff-assist";
+import { askAssistantOnce, postToOpsGroup } from "@/modules/inbox/staff-assist";
 
 function args() {
   const argv = process.argv.slice(2);
   const i = argv.indexOf("--ten");
   const asName = i >= 0 ? argv[i + 1] : undefined;
+  const toGroup = argv.includes("--dang-nhom");
   // Không có --ten thì i = -1; phải kiểm i >= 0 trước, không thì loại nhầm tham số đầu (chính là câu hỏi).
   const question = argv
-    .filter((_a, k) => i < 0 || (k !== i && k !== i + 1))
+    .filter((a, k) => a !== "--dang-nhom" && (i < 0 || (k !== i && k !== i + 1)))
     .join(" ")
     .trim();
-  return { asName, question };
+  return { asName, question, toGroup };
 }
 
 async function main() {
   loadLocalEnv();
-  const { asName, question } = args();
+  const { asName, question, toGroup } = args();
   if (!question) {
     console.error('Cách dùng: npx tsx scripts/hoi-tro-ly.ts [--ten "Sếp Ngọc"] "câu hỏi"');
     process.exit(2);
@@ -38,7 +40,17 @@ async function main() {
   const res = await askAssistantOnce(org.id, question, asName);
   console.log(`\n${asName ?? "Sếp Hưng"}: ${question}`);
   console.log(`\nDương Quá: ${res.reply || "(không trả lời)"}`);
-  if (res.groupMessage) console.log(`\n[nó muốn đăng lên nhóm]\n${res.groupMessage}`);
+  if (res.groupMessage) {
+    console.log(`\n[tin cho nhóm]\n${res.groupMessage}`);
+    if (toGroup) {
+      const r = await postToOpsGroup(org.id, res.groupMessage);
+      console.log(r.posted ? "\n>> ĐÃ xếp vào hàng đợi gửi lên nhóm." : `\n>> KHÔNG đăng được: ${r.reason}`);
+    } else {
+      console.log("\n(chưa đăng — thêm --dang-nhom nếu muốn gửi thật)");
+    }
+  } else if (toGroup) {
+    console.log("\n>> Nó không soạn tin nào cho nhóm nên không có gì để đăng.");
+  }
   console.log(`\n--- ${res.model} · ${res.costUsd} USD · lý do: ${res.note} ---`);
   await closePool();
 }

@@ -255,6 +255,23 @@ BẮT BUỘC: mọi con số trong câu trả lời phải lấy từ khối S�
 Trả lời tin cuối cùng của nhân viên.`;
 }
 
+/** Đăng một tin lên nhóm vận hành dưới tên trợ lý; worker gửi ở vòng kế tiếp. */
+export async function postToOpsGroup(orgId: string, body: string) {
+  const text = body.trim();
+  if (!text) return { posted: false as const, reason: "tin rong" };
+  const group = await opsGroupConversation(orgId);
+  if (!group) return { posted: false as const, reason: "chua co hoi thoai nhom" };
+  await withTx(async (tx) => {
+    await tx.query(
+      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
+       VALUES ($1,$2,'out','system','Dương Quá — trợ lý',$3,'queued',now())`,
+      [orgId, group.id, text.slice(0, 3000)],
+    );
+    await tx.query("UPDATE conversations SET last_message_at = now(), updated_at = now() WHERE id = $1", [group.id]);
+  });
+  return { posted: true as const, conversationId: group.id };
+}
+
 /**
  * Hỏi trợ lý một câu và lấy ngay câu trả lời, KHÔNG ghi tin, KHÔNG gửi WhatsApp cho ai.
  * Để Sếp và đội thử trực tiếp mà không làm ồn hộp thư của người khác.
