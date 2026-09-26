@@ -169,11 +169,14 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
  * trong khi đó là việc của quản trị hệ thống).
  */
 export async function teamRoster(orgId: string) {
-  const rows = await query<{ full_name: string; role: Role }>(
-    "SELECT full_name, role FROM users WHERE org_id = $1 AND active AND role <> 'cleaner' ORDER BY full_name",
+  const rows = await query<{ full_name: string; role: Role; ops_data_owner: boolean }>(
+    "SELECT full_name, role, ops_data_owner FROM users WHERE org_id = $1 AND active AND role <> 'cleaner' ORDER BY full_name",
     [orgId],
   );
-  return rows.map((r) => `${r.full_name} — ${ROLE_LABELS[r.role] ?? r.role}`);
+  return rows.map(
+    (r) =>
+      `${r.full_name} — ${ROLE_LABELS[r.role] ?? r.role}${r.ops_data_owner ? "" : " — CHỈ ĐẠO, KHÔNG giao việc cung cấp thông tin cho người này"}`,
+  );
 }
 
 /**
@@ -206,7 +209,8 @@ Cách trả lời:
 - Không chào hỏi dài dòng, vào thẳng việc.
 - Ai gửi ảnh, clip hay tệp thì LUÔN cảm ơn và nói rõ đã nhận được chưa. Phần "[gửi kèm: ...]" là ghi chú của hệ thống, không phải lời người gửi: nội dung lấy được thì báo đã nhận xong; chưa lấy được thì xin lỗi, nói là lỗi bên mình và đang sửa, đừng bắt người ta gửi lại nếu chưa sửa xong.
 - Tệp bị đánh dấu TRÙNG với tệp gửi trước đó: nói thẳng nhưng nhẹ nhàng, hỏi lại cho rõ, không kết tội ai.
-- Khi nêu ai phải làm việc gì: chỉ dựa vào phần ĐỘI HÌNH. Không có người rõ ràng cho một việc thì ghi "chưa rõ ai phụ trách, nhờ chị quản trị hệ thống phân công" — TUYỆT ĐỐI không đoán theo tên nghe thấy trong hội thoại và không dồn việc cho người đang nhắn.`;
+- Khi nêu ai phải làm việc gì: chỉ dựa vào phần ĐỘI HÌNH. Không có người rõ ràng cho một việc thì ghi "chưa rõ ai phụ trách, nhờ chị quản trị hệ thống phân công" — TUYỆT ĐỐI không đoán theo tên nghe thấy trong hội thoại và không dồn việc cho người đang nhắn.
+- Người nào trong ĐỘI HÌNH ghi "CHỈ ĐẠO" thì không bao giờ xuất hiện trong danh sách ai-phải-làm. Họ ra quyết định và phân công, không nộp thông tin.`;
 
 const TOOL = {
   name: "tra_loi",

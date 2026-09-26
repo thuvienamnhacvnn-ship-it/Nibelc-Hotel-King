@@ -225,6 +225,7 @@ describe("trợ lý trực nội bộ", () => {
     const prompt = String(sent.messages[0].content);
     expect(prompt).toContain("ĐỘI HÌNH");
     expect(prompt).toContain("Nguyen Thi Ngoc — Quản trị hệ thống");
+    expect(prompt).not.toContain("CHỈ ĐẠO, KHÔNG giao việc");
     // Luật cấm đoán nằm ở lời dặn hệ thống, không phải trong lời nhắc từng lượt.
     expect(String(sent.system)).toContain("không dồn việc cho người đang nhắn");
   });
@@ -251,6 +252,17 @@ describe("trợ lý trực nội bộ", () => {
     expect(lan).toBe(2);
     expect(res.postedToGroup).toBe(1);
     expect((await outbox(group)).some((m) => m.body.includes("gửi nốt thông tin"))).toBe(true);
+  });
+
+  it("người chỉ đạo bị loại khỏi danh sách ai-phải-làm", async () => {
+    await openSwitches(fixture);
+    await query("UPDATE users SET full_name = 'Anh Hung', ops_data_owner = false WHERE org_id = $1 AND role = 'admin'", [fixture.orgId]);
+    await conversation(fixture, "staff", "Còn thiếu gì thì ai phải làm em?");
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ đây ạ.", note: "phan viec" });
+    await runStaffAssist();
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(String(sent.messages[0].content)).toContain("Anh Hung — Quản trị hệ thống — CHỈ ĐẠO, KHÔNG giao việc cung cấp thông tin cho người này");
+    expect(String(sent.system)).toContain("không bao giờ xuất hiện trong danh sách ai-phải-làm");
   });
 
   it("không bao giờ đụng hội thoại của khách", async () => {
