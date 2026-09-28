@@ -134,7 +134,7 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
     nha: number; san_pham: number; link_lich: number; dem_chan: number; booking: number;
     xung_dot: number; lech_lich: number; don_mo: number; don_qua_han: number; qa: number;
     nguoi_don: number; mau_checklist: number; lan_nhap: number; suc_chua_tam: number;
-    truc_su_co: number; nhan_bao_cao: number;
+    truc_su_co: number; nhan_bao_cao: number; file_excel_da_nhan: number;
   }>(
     `SELECT (SELECT count(*)::int FROM properties WHERE org_id = $1) AS nha,
             (SELECT count(*)::int FROM units WHERE org_id = $1) AS san_pham,
@@ -149,6 +149,14 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
             (SELECT count(*)::int FROM cleaner_profiles WHERE org_id = $1) AS nguoi_don,
             (SELECT count(*)::int FROM checklist_templates WHERE org_id = $1) AS mau_checklist,
             (SELECT count(*)::int FROM import_batches WHERE org_id = $1) AS lan_nhap,
+            (SELECT count(*)::int FROM messages m
+               WHERE m.org_id = $1 AND m.direction = 'in'
+                 AND m.created_at > now() - interval '30 days'
+                 AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(m.attachments) a
+                    WHERE a->>'storageKey' IS NOT NULL
+                      AND (a->>'mimeType' LIKE '%spreadsheet%' OR a->>'mimeType' LIKE '%excel%' OR a->>'fileName' ILIKE '%.xlsx')
+                 )) AS file_excel_da_nhan,
             (SELECT count(*)::int FROM units WHERE org_id = $1 AND kind <> 'whole' AND capacity = 2) AS suc_chua_tam,
             (SELECT count(*)::int FROM escalation_contacts WHERE org_id = $1) AS truc_su_co,
             (SELECT count(*)::int FROM report_subscriptions WHERE org_id = $1) AS nhan_bao_cao`,
@@ -158,7 +166,7 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
     date,
     ...(row ?? {
       nha: 0, san_pham: 0, link_lich: 0, dem_chan: 0, booking: 0, xung_dot: 0, lech_lich: 0, don_mo: 0, don_qua_han: 0, qa: 0,
-      nguoi_don: 0, mau_checklist: 0, lan_nhap: 0, suc_chua_tam: 0, truc_su_co: 0, nhan_bao_cao: 0,
+      nguoi_don: 0, mau_checklist: 0, lan_nhap: 0, suc_chua_tam: 0, truc_su_co: 0, nhan_bao_cao: 0, file_excel_da_nhan: 0,
     }),
   };
 }
@@ -186,7 +194,14 @@ export async function teamRoster(orgId: string) {
 export function missingItems(s: Awaited<ReturnType<typeof opsSnapshot>>): string[] {
   const out: string[] = [];
   if (s.suc_chua_tam > 0) out.push(`sức chứa thật của ${s.suc_chua_tam} phòng (đang tạm để 2 khách/phòng)`);
-  if (s.lan_nhap === 0) out.push("file Excel lịch đặt phòng (hiện chưa nhập lần nào nên hệ thống không có tên khách, không có tiền)");
+  // Đã GỬI khác với đã NHẬP. Đo theo số lần nhập thì người gửi rồi vẫn bị đi giục gửi lại.
+  if (s.lan_nhap === 0) {
+    out.push(
+      s.file_excel_da_nhan > 0
+        ? `file Excel lịch đặt phòng ĐÃ NHẬN (${s.file_excel_da_nhan} tệp), bên kỹ thuật đang nhập — KHÔNG cần ai gửi lại`
+        : "file Excel lịch đặt phòng (hiện chưa nhận được tệp nào nên hệ thống không có tên khách, không có tiền)",
+    );
+  }
   if (s.nguoi_don === 0) out.push("danh sách người dọn kèm ca làm");
   if (s.mau_checklist === 0) out.push("checklist dọn phòng và mục nào bắt buộc chụp ảnh");
   if (s.qa < 10) out.push(`nội quy nhà và câu hỏi khách hay hỏi (kho Q&A mới có ${s.qa} câu đã duyệt)`);

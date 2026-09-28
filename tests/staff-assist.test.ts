@@ -265,6 +265,21 @@ describe("trợ lý trực nội bộ", () => {
     expect(String(sent.system)).toContain("không bao giờ xuất hiện trong danh sách ai-phải-làm");
   });
 
+  it("file Excel đã nhận thì không đi giục gửi lại nữa", async () => {
+    await openSwitches(fixture);
+    const conv = await conversation(fixture, "staff", "Còn thiếu gì em?");
+    await query(
+      "INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, attachments) VALUES ($1,$2,'in','staff','Diu','file day',    'received', $3)",
+      [fixture.orgId, conv, JSON.stringify([{ kind: "document", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName: "dat-phong.xlsx", storageKey: "org/x/inbox/y/z.xlsx" }])],
+    );
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ đây ạ.", note: "bao thieu" });
+    await runStaffAssist();
+    const prompt = String(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)).messages[0].content);
+    expect(prompt).toContain("ĐÃ NHẬN");
+    expect(prompt).toContain("KHÔNG cần ai gửi lại");
+    expect(prompt).not.toContain("chưa nhận được tệp nào");
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");
