@@ -4,12 +4,20 @@
  */
 
 export const DEFAULT_GUEST_MODEL = "claude-haiku-4-5-20251001";
+/**
+ * Trợ lý trực nội bộ viết tin gửi cả đội, có tin báo cáo dài. Haiku hay sai dấu tiếng Việt
+ * ("CẦP NHẬT", "chị Diệu", "VIỆC GẶP NHẤT" — đã phải sửa tay 26 và 28/09), nên dùng model khá hơn.
+ * Số lượt ít (vài chục tin/ngày) nên chênh lệch tiền không đáng kể.
+ */
+export const DEFAULT_STAFF_MODEL = "claude-sonnet-5";
 
 /** Giá USD cho 1 triệu token (vào, ra). Model lạ ⇒ dùng giá cao để trần chi phí luôn an toàn. */
 const PRICES: Record<string, [number, number]> = {
   "claude-haiku-4-5-20251001": [1, 5],
   "claude-sonnet-4-5-20250929": [3, 15],
   "claude-sonnet-4-6": [3, 15],
+  "claude-sonnet-5": [3, 15],
+  "claude-opus-5": [15, 75],
 };
 const FALLBACK_PRICE: [number, number] = [15, 75];
 
@@ -19,6 +27,11 @@ export function aiConfigured(): boolean {
 
 export function guestModel(): string {
   return process.env.AI_GUEST_MODEL?.trim() || DEFAULT_GUEST_MODEL;
+}
+
+/** Model cho trợ lý trực nội bộ. Đổi bằng env AI_STAFF_MODEL nếu cần hạ chi phí. */
+export function staffModel(): string {
+  return process.env.AI_STAFF_MODEL?.trim() || DEFAULT_STAFF_MODEL;
 }
 
 export function costUsd(model: string, inputTokens: number, outputTokens: number): number {

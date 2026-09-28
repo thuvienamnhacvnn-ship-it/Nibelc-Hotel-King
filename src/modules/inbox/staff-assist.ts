@@ -1,6 +1,6 @@
 import { query, queryOne, withTx } from "@/lib/db";
 import { formatDateVi, todayOps } from "@/lib/time";
-import { AiError, aiConfigured, callTool, guestModel } from "@/modules/ai/claude";
+import { AiError, aiConfigured, callTool, staffModel } from "@/modules/ai/claude";
 import { redactForAi } from "@/modules/ai/redact";
 import { isPaused } from "@/modules/automation/switches";
 import { ROLE_LABELS, type Role } from "@/modules/auth/permissions";
@@ -342,10 +342,10 @@ export async function askAssistantOnce(orgId: string, question: string, asName =
     snapshot,
     roster: await teamRoster(orgId),
   });
-  let res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: guestModel(), maxTokens: 1600 });
+  let res = await callTool<ToolOut>({ system: SYSTEM, user, tool: TOOL, model: staffModel(), maxTokens: 1600 });
   if (loiHuaChuaLam(String(res.input.message ?? ""), String(res.input.group_message ?? ""))) {
     res = await callTool<ToolOut>({ system: SYSTEM, user: `${user}
-${LENH_LAM_NGAY}`, tool: TOOL, model: guestModel(), maxTokens: 1600 });
+${LENH_LAM_NGAY}`, tool: TOOL, model: staffModel(), maxTokens: 1600 });
   }
   return {
     reply: String(res.input.message ?? "").trim(),
@@ -412,7 +412,7 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         roster: await teamRoster(p.orgId),
       });
 
-      const model = guestModel();
+      const model = staffModel();
       const run = await queryOne<{ id: string }>(
         `INSERT INTO agent_runs (org_id, agent_role, task_key, entity_type, entity_id, tools_allowed, status, attempt, started_at, heartbeat_at, input)
          VALUES ($1,'manager',$2,'message',$3,'{tra_loi}','running',1,now(),now(),$4)
