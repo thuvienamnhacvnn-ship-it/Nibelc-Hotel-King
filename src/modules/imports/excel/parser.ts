@@ -24,13 +24,17 @@ export type Field =
   | "guests"
   | "checkin_note"
   | "status"
-  | "phone";
+  | "phone"
+  | "source";
 
 const HEADER_FIELDS: [string, Field][] = [
   ["stt", "stt"],
   ["ngay nhan booking", "booked"],
   ["khach", "guest"],
   ["ghi chu", "note"],
+  // Bảng vận hành của công ty để kênh bán ở cột riêng "NGUỒN"; cột "GHI CHÚ" của sheet nhà lại chứa tình trạng.
+  ["nguon", "source"],
+  ["kenh", "source"],
   ["can ho", "unit"],
   ["ma dat phong", "ref"],
   ["thoi gian nhan phong", "check_in"],
@@ -259,7 +263,9 @@ function interpretRow(sheet: string, row: SheetRow, lookup: UnitLookup): ParsedI
 
   const externalRef = text(v.ref);
   const note = text(v.note);
-  const channel = detectChannel(note);
+  const sourceCell = text(v.source);
+  // Cột "NGUỒN" là nơi khai kênh bán rõ ràng nhất; file cũ không có cột này thì vẫn dò trong ghi chú.
+  const channel = detectChannel(sourceCell) ?? detectChannel(note);
   let paymentNote: string | null = null;
   if (!externalRef) add("missing_ref", "Dòng không có mã đặt phòng — không thể chống nhập lặp.");
   // Khoản thu có thể đứng riêng ("20e TM") hoặc lẫn với kênh ("Booking 460,86e TM"). Thông điệp không chép số tiền —
@@ -269,12 +275,21 @@ function interpretRow(sheet: string, row: SheetRow, lookup: UnitLookup): ParsedI
     add("payment_note", "Cột ghi chú có khoản thu — đã tách ra ghi chú thu tiền (chưa đối soát), không đưa vào ghi chú booking.");
   }
   if (!channel) {
-    add("channel_unknown", paymentNote ? "Ghi chú chỉ có khoản thu — không biết kênh bán." : note ? `Ghi chú "${note}" không cho biết kênh bán.` : "Cột ghi chú trống — không biết kênh bán.");
+    add(
+      "channel_unknown",
+      sourceCell
+        ? `Cột nguồn "${sourceCell}" không cho biết kênh bán.`
+        : paymentNote
+          ? "Ghi chú chỉ có khoản thu — không biết kênh bán."
+          : note
+            ? `Ghi chú "${note}" không cho biết kênh bán.`
+            : "Không có cột nguồn và ghi chú trống — không biết kênh bán.",
+    );
   }
   if (externalRef && channel) {
     const numeric = /^\d+$/.test(externalRef);
-    if (channel === "booking_com" && !numeric) add("ref_channel_mismatch", "Ghi chú là Booking.com nhưng mã không phải dạng số.");
-    if (channel === "airbnb" && numeric) add("ref_channel_mismatch", "Ghi chú là Airbnb nhưng mã là dạng số (giống Booking.com).");
+    if (channel === "booking_com" && !numeric) add("ref_channel_mismatch", "Nguồn là Booking.com nhưng mã không phải dạng số.");
+    if (channel === "airbnb" && numeric) add("ref_channel_mismatch", "Nguồn là Airbnb nhưng mã là dạng số (giống Booking.com).");
   }
 
   const guestName = text(v.guest)?.replace(/\s+/g, " ") ?? null;
