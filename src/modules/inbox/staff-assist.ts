@@ -157,7 +157,7 @@ export async function opsSnapshot(orgId: string, tz = "Europe/Budapest") {
                     WHERE a->>'storageKey' IS NOT NULL
                       AND (a->>'mimeType' LIKE '%spreadsheet%' OR a->>'mimeType' LIKE '%excel%' OR a->>'fileName' ILIKE '%.xlsx')
                  )) AS file_excel_da_nhan,
-            (SELECT count(*)::int FROM units WHERE org_id = $1 AND kind <> 'whole' AND capacity = 2) AS suc_chua_tam,
+            (SELECT count(*)::int FROM units WHERE org_id = $1 AND capacity_confirmed_at IS NULL) AS suc_chua_tam,
             (SELECT count(*)::int FROM escalation_contacts WHERE org_id = $1) AS truc_su_co,
             (SELECT count(*)::int FROM report_subscriptions WHERE org_id = $1) AS nhan_bao_cao`,
     [orgId],
@@ -193,7 +193,8 @@ export async function teamRoster(orgId: string) {
  */
 export function missingItems(s: Awaited<ReturnType<typeof opsSnapshot>>): string[] {
   const out: string[] = [];
-  if (s.suc_chua_tam > 0) out.push(`sức chứa thật của ${s.suc_chua_tam} phòng (đang tạm để 2 khách/phòng)`);
+  // Đếm theo cờ xác nhận, KHÔNG suy từ giá trị: phòng đúng là 2 khách thì đoán kiểu cũ vẫn kêu thiếu mãi.
+  if (s.suc_chua_tam > 0) out.push(`sức chứa thật của ${s.suc_chua_tam} phòng (chưa ai xác nhận, đang để số tạm lúc nhập danh mục)`);
   // Đã GỬI khác với đã NHẬP. Đo theo số lần nhập thì người gửi rồi vẫn bị đi giục gửi lại.
   if (s.lan_nhap === 0) {
     out.push(

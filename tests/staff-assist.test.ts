@@ -280,6 +280,16 @@ describe("trợ lý trực nội bộ", () => {
     expect(prompt).not.toContain("chưa nhận được tệp nào");
   });
 
+  it("sức chứa đã xác nhận thì thôi giục, kể cả khi vẫn là 2 khách", async () => {
+    await openSwitches(fixture);
+    await conversation(fixture, "staff", "Còn thiếu gì em?");
+    await query("UPDATE units SET capacity = 2, capacity_confirmed_at = now() WHERE org_id = $1", [fixture.orgId]);
+    const fetchSpy = mockClaude({ action: "reply", message: "Dạ đây ạ.", note: "bao thieu" });
+    await runStaffAssist();
+    const prompt = String(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)).messages[0].content);
+    expect(prompt).not.toContain("sức chứa thật của");
+  });
+
   it("không bao giờ đụng hội thoại của khách", async () => {
     await openSwitches(fixture);
     const guest = await conversation(fixture, "guest", "Hello, what time is check-in?");
