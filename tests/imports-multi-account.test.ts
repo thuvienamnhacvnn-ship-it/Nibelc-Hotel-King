@@ -146,6 +146,18 @@ describe("Nhập Excel nhiều tài khoản OTA", () => {
     expect(after?.n).toBe(before?.n);
   });
 
+  it("khai rõ file không cho biết tài khoản ⇒ nhận được, ghi source_account rỗng (chưa biết)", async () => {
+    setClock(() => new Date("2026-09-16T08:00:00Z"));
+    // File vận hành chung của công ty không ghi đơn thuộc tài khoản OTA nào; gán đại một nhãn là ghi sai hàng nghìn dòng.
+    const file = await makeWorkbook("Khong biet tai khoan", [{ ref: "9700", unitCode: unitCodes.r1, guest: "Khách không rõ tài khoản", checkIn: "3 tháng 8 2027", checkOut: "5 tháng 8 2027" }]);
+    const p = await previewImport(ctx.actors.vn_manager, { fileName: "chung.xlsx", data: file }, { accountUnknown: true });
+    expect(p.sourceAccount).toBe("");
+    const res = await applyImport(ctx.actors.vn_manager, p.batchId);
+    expect(res.applied).toBe(1);
+    const row = await queryOne<{ source_account: string }>("SELECT source_account FROM bookings WHERE org_id = $1 AND external_ref = '9700'", [ctx.orgId]);
+    expect(row?.source_account).toBe("");
+  });
+
   it("kịch bản QA: đơn cũ ghi '' + lô mới có nhãn + khách ĐỔI NGÀY ⇒ vẫn chỉ MỘT booking", async () => {
     setClock(() => new Date("2026-09-16T08:00:00Z"));
     // Giai đoạn 1 — như toàn bộ dữ liệu production: lúc nhập chưa có ô chọn tài khoản ⇒ source_account = ''.

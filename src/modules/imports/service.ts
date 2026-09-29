@@ -148,7 +148,17 @@ export async function importNeedsAccountChoice(orgId: string): Promise<boolean> 
  * "BDC  Nha X" (hai dấu cách) thành một namespace khoá nguồn riêng — đúng cái đường sinh booking trùng.
  * Không khai gì mà tổ chức đang có nhiều tài khoản cùng kênh ⇒ dừng, không đoán.
  */
-async function resolveSourceAccount(orgId: string, opts: { connectorId?: string | null; sourceAccount?: string | null }): Promise<SourceAccountChoice> {
+async function resolveSourceAccount(
+  orgId: string,
+  opts: { connectorId?: string | null; sourceAccount?: string | null; accountUnknown?: boolean },
+): Promise<SourceAccountChoice> {
+  /**
+   * File vận hành chung của công ty (một sheet mỗi nhà, lẫn cả Booking lẫn Airbnb) KHÔNG ghi mỗi đơn
+   * thuộc tài khoản OTA nào. Gán đại một nhãn là ghi sai hàng nghìn dòng. Khai rõ "không biết" thì
+   * `source_account` để rỗng — đúng nghĩa CHƯA BIẾT mà `sameSourceAccount` đã xử lý an toàn.
+   * Phải khai có chủ ý, không phải mặc định: bỏ trống vẫn bị chặn như cũ.
+   */
+  if (opts.accountUnknown) return { sourceAccount: "", connectorId: null };
   const connectorId = opts.connectorId?.trim() || null;
   if (connectorId) {
     if (!UUID_RE.test(connectorId)) throw notFound("tài khoản kênh");
@@ -183,6 +193,8 @@ export interface PreviewResult {
 
 export interface PreviewOptions {
   sourceSheet?: string;
+  /** File không cho biết đơn thuộc tài khoản OTA nào — ghi nhận là chưa biết thay vì gán bừa. */
+  accountUnknown?: boolean;
   /** Tài khoản OTA của lô — lấy nhãn từ `connector_accounts`. */
   connectorId?: string | null;
   /** Nhãn tài khoản gõ tay khi chưa có connector tương ứng. */
