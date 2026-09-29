@@ -314,21 +314,67 @@ LỖI Ở LƯỢT TRƯỚC: bạn nói sẽ báo lên nhóm nhưng để trống
 Lần này BẮT BUỘC điền group_message với nội dung đầy đủ cần đăng lên nhóm, và trong message chỉ nói
 là đã báo (đã làm rồi), không nói "sẽ".`;
 
-/** Đăng một tin lên nhóm vận hành dưới tên trợ lý; worker gửi ở vòng kế tiếp. */
+/** WhatsApp không nhận tin quá dài; chừa chỗ cho dòng đánh số phần. */
+const MAX_PART_CHARS = 3400;
+
+/**
+ * Cắt tin dài thành nhiều phần THEO ĐOẠN, không cắt giữa câu.
+ * Trước đây chỉ `slice(0, 3000)` nên báo cáo dài bị cụt ngang mà không ai biết — nhóm nhận được
+ * nửa câu (đã xảy ra 29/09 với báo cáo khảo sát giá).
+ */
+export function splitForWhatsApp(text: string, max = MAX_PART_CHARS): string[] {
+  const clean = text.trim();
+  if (clean.length <= max) return [clean];
+  const parts: string[] = [];
+  let cur = "";
+  for (const block of clean.split(/\n\n+/)) {
+    const piece = block.trim();
+    if (!piece) continue;
+    if (cur && cur.length + piece.length + 2 > max) {
+      parts.push(cur);
+      cur = "";
+    }
+    // Một đoạn đơn lẻ dài hơn cả phần: cắt theo dòng, rồi mới đành cắt cứng.
+    if (piece.length > max) {
+      if (cur) { parts.push(cur); cur = ""; }
+      let con = piece;
+      while (con.length > max) {
+        const cat = con.lastIndexOf("\n", max);
+        const tai = cat > max * 0.5 ? cat : max;
+        parts.push(con.slice(0, tai).trim());
+        con = con.slice(tai).trim();
+      }
+      cur = con;
+      continue;
+    }
+    cur = cur ? `${cur}
+
+${piece}` : piece;
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+
+/** Đăng một tin lên nhóm vận hành dưới tên trợ lý; worker gửi ở vòng kế tiếp. Tin dài tự tách phần. */
 export async function postToOpsGroup(orgId: string, body: string) {
   const text = body.trim();
   if (!text) return { posted: false as const, reason: "tin rong" };
   const group = await opsGroupConversation(orgId);
   if (!group) return { posted: false as const, reason: "chua co hoi thoai nhom" };
+  const parts = splitForWhatsApp(text);
   await withTx(async (tx) => {
-    await tx.query(
-      `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
-       VALUES ($1,$2,'out','system','Dương Quá — trợ lý',$3,'queued',now())`,
-      [orgId, group.id, text.slice(0, 3000)],
-    );
+    for (const [i, part] of parts.entries()) {
+      const danh = parts.length > 1 ? `[Phần ${i + 1}/${parts.length}]
+${part}` : part;
+      await tx.query(
+        `INSERT INTO messages (org_id, conversation_id, direction, author_type, author_name, body, status, queued_at)
+         VALUES ($1,$2,'out','system','Dương Quá — trợ lý',$3,'queued',now())`,
+        [orgId, group.id, danh],
+      );
+    }
     await tx.query("UPDATE conversations SET last_message_at = now(), updated_at = now() WHERE id = $1", [group.id]);
   });
-  return { posted: true as const, conversationId: group.id };
+  return { posted: true as const, conversationId: group.id, parts: parts.length };
 }
 
 /**

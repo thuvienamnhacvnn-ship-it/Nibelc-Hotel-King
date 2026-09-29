@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { query, queryOne } from "@/lib/db";
-import { runStaffAssist } from "@/modules/inbox/staff-assist";
+import { runStaffAssist, splitForWhatsApp } from "@/modules/inbox/staff-assist";
 import { type Fixture, makeFixture, uid } from "./helpers";
 
 /** Trợ lý trực nội bộ: chỉ trả lời hội thoại của ĐỘI, Claude được giả lập bằng fetch giả. */
@@ -288,6 +288,22 @@ describe("trợ lý trực nội bộ", () => {
     await runStaffAssist();
     const prompt = String(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)).messages[0].content);
     expect(prompt).not.toContain("sức chứa thật của");
+  });
+
+  it("tin dài được tách phần theo đoạn, không cắt cụt giữa câu", () => {
+    const doan = (n: number) => `Đoạn ${n}: ` + "x".repeat(600);
+    const dai = [doan(1), doan(2), doan(3), doan(4), doan(5), doan(6)].join("\n\n");
+    const parts = splitForWhatsApp(dai, 1000);
+    expect(parts.length).toBeGreaterThan(1);
+    // Không mất chữ nào và không đoạn nào bị xé làm đôi.
+    expect(parts.join(" ").replace(/\s+/g, "")).toBe(dai.replace(/\s+/g, ""));
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(1000);
+  });
+
+  it("đoạn đơn lẻ dài hơn giới hạn vẫn cắt được, không mất chữ", () => {
+    const mot = "y".repeat(2500);
+    const parts = splitForWhatsApp(mot, 1000);
+    expect(parts.join("").length).toBe(2500);
   });
 
   it("không bao giờ đụng hội thoại của khách", async () => {
