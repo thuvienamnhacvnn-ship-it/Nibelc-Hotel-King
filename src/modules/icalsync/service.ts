@@ -177,15 +177,22 @@ export async function syncFeed(feedId: string, fetcher: Fetcher = defaultFetcher
 
 /** Đêm hệ thống đang giữ trên tài nguyên của sản phẩm. `settled` bỏ các claim quá mới (kênh chưa kịp nhập). */
 async function systemBusyNights(q: Queryable, orgId: string, unitId: string, from: string, to: string, feedId?: string) {
-  // fromOtherFeed: đêm bận chỉ vì LỊCH CỦA KÊNH KHÁC đang giữ chỗ (ví dụ Airbnb bán, ta chặn tồn).
-  // Kênh đang đồng bộ không biết gì về đơn của kênh kia nên luôn báo "trống" — đó không phải lệch lịch,
-  // và app chỉ đọc chứ không đẩy ngược lên kênh. Đếm vào "all" (để không báo thiếu), bỏ khỏi "settled"
-  // (để không sinh cảnh báo giả "hệ thống bận mà kênh trống").
-  const { rows } = await q.query<{ start: string; end: string; created_at: Date; from_other_feed: boolean }>(
+  // Hai loại đêm bận KHÔNG phải lệch lịch, nhưng vẫn phải đếm vào "all" để không báo thiếu:
+  //
+  // fromOtherFeed — bận vì LỊCH CỦA KÊNH KHÁC giữ chỗ (Airbnb bán, ta chặn tồn). Kênh đang đồng bộ không
+  //   biết đơn của kênh kia nên luôn báo "trống"; app chỉ đọc, không đẩy ngược lên kênh.
+  //
+  // fromOtherUnit — bận vì SẢN PHẨM KHÁC trong cùng nhà. Nguyên căn gồm mọi phòng lẻ: khách đặt một phòng
+  //   là nguyên căn hết chỗ, nhưng lịch của chính listing nguyên căn chẳng có đơn nào nên báo "trống".
+  //   Không trừ ra thì mỗi đơn phòng lẻ sinh một cảnh báo giả cho nguyên căn — chị Dịu đối chiếu tay
+  //   ngày 01/10/2026 bắt đúng lỗi này ở Baross và József 50.
+  const { rows } = await q.query<{ start: string; end: string; created_at: Date; from_other_feed: boolean; from_other_unit: boolean }>(
     `SELECT lower(c.stay)::text AS start, upper(c.stay)::text AS "end", c.created_at,
-            (b.id IS NOT NULL AND b.source = 'ical' AND b.ical_feed_id IS DISTINCT FROM $5::uuid) AS from_other_feed
+            (b.id IS NOT NULL AND b.source = 'ical' AND b.ical_feed_id IS DISTINCT FROM $5::uuid) AS from_other_feed,
+            (coalesce(b.unit_id, a.unit_id) IS DISTINCT FROM $2::uuid) AS from_other_unit
        FROM resource_claims c
        LEFT JOIN inventory_blocks b ON b.id = c.block_id
+       LEFT JOIN booking_allocations a ON a.id = c.allocation_id
       WHERE c.org_id = $1 AND c.active
         AND c.resource_id IN (SELECT resource_id FROM unit_resources WHERE unit_id = $2)
         AND c.stay && daterange($3::date, $4::date)`,
@@ -194,7 +201,11 @@ async function systemBusyNights(q: Queryable, orgId: string, unitId: string, fro
   const cutoff = now().getTime() - GRACE_HOURS * 3600_000;
   return {
     all: nightsOf(rows, from, to),
-    settled: nightsOf(rows.filter((r) => !r.from_other_feed && new Date(r.created_at).getTime() < cutoff), from, to),
+    settled: nightsOf(
+      rows.filter((r) => !r.from_other_feed && !r.from_other_unit && new Date(r.created_at).getTime() < cutoff),
+      from,
+      to,
+    ),
   };
 }
 
@@ -248,11 +259,28 @@ export async function listFeeds(actor: Actor) {
   );
 }
 
+/**
+ * Nhãn ĐÊM của một khoảng lệch, để người đọc không phải tự đoán.
+ * `end_date` là ngày TRẢ PHÒNG nên không phải đêm. Viết "08/10 đến 31/10" khiến người đối chiếu
+ * tưởng gồm cả đêm 31 — chị Dịu đã phản hồi đúng chỗ này ngày 01/10/2026. Nay ghi rõ "các đêm".
+ */
+export function nightsLabel(startDate: string, endDate: string): string {
+  const d = (iso: string) => {
+    const [y, m, day] = iso.slice(0, 10).split("-");
+    return `${day}/${m}/${y}`;
+  };
+  const lastNight = addDays(endDate.slice(0, 10), -1);
+  const soDem = Math.max(1, Math.round((Date.parse(endDate.slice(0, 10)) - Date.parse(startDate.slice(0, 10))) / 86_400_000));
+  return soDem === 1
+    ? `đêm ${d(startDate)}`
+    : `${soDem} đêm, từ đêm ${d(startDate)} đến đêm ${d(lastNight)} (khách trả phòng ${d(endDate)})`;
+}
+
 export async function listFindings(actor: Actor, status: "open" | "all" = "open") {
   assertCan(actor, "connector.view");
   return query(
     `SELECT s.id, s.kind, s.start_date, s.end_date, s.status, s.first_seen_at, s.last_seen_at, s.resolution,
-            u.code AS unit_code, l.channel
+            u.code AS unit_code, u.name AS unit_name, l.channel
        FROM calendar_sync_findings s JOIN ical_feeds f ON f.id = s.feed_id JOIN channel_listings l ON l.id = f.listing_id JOIN units u ON u.id = s.unit_id
       WHERE s.org_id = $1 AND ($2 = 'all' OR s.status = 'open')
       ORDER BY s.status = 'open' DESC, s.start_date LIMIT 300`,

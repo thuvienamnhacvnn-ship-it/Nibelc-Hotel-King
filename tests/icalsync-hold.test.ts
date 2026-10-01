@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { query, queryOne } from "@/lib/db";
 import { addDays, todayOps } from "@/lib/time";
 import { createBooking, createInventoryBlock } from "@/modules/booking/service";
-import { addIcalFeed, setIcalHoldMode, syncFeed } from "@/modules/icalsync/service";
+import { addIcalFeed, nightsLabel, setIcalHoldMode, syncFeed } from "@/modules/icalsync/service";
 import { type Fixture, bookingInput, expectCode, makeFixture } from "./helpers";
 
 const ics = (events: { start: string; end: string; uid?: string }[]) =>
@@ -238,5 +238,31 @@ describe("iCal — hai kênh cùng một phòng", () => {
     await syncFeed(b.id, feedOf(ics([])));
     const openB = await query<{ kind: string }>("SELECT kind FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [b.id]);
     expect(openB.map((r) => r.kind)).toEqual(["system_busy_channel_free"]);
+  });
+
+  it("khách đặt một PHÒNG LẺ không sinh cảnh báo giả cho lịch NGUYÊN CĂN", async () => {
+    // Nguyên căn gồm mọi phòng; đặt một phòng là nguyên căn hết chỗ. Nhưng listing nguyên căn trên kênh
+    // chẳng có đơn nào nên lịch của nó báo trống — đó không phải lệch lịch.
+    // Chị Dịu đối chiếu tay ngày 01/10/2026 bắt đúng lỗi này ở Baross và József 50.
+    const f = await makeFixture();
+    const today = todayOps("Europe/Budapest");
+    const d = (n: number) => addDays(today, n);
+    await createBooking(f.actors.admin, bookingInput(f.units.r1, d(10), d(13)));
+    await query("UPDATE resource_claims SET created_at = created_at - interval '12 hours'");
+
+    const listing = (await queryOne<{ id: string }>(
+      "SELECT id FROM channel_listings WHERE unit_id = $1 AND channel = 'airbnb'",
+      [f.units.whole],
+    ))!.id;
+    const feed = await addIcalFeed(f.actors.admin, { listingId: listing, url: "https://www.airbnb.com/calendar/ical/whole.ics?s=x" });
+    await syncFeed(feed.id, feedOf(ics([])));
+
+    const open = await query<{ kind: string }>("SELECT kind FROM calendar_sync_findings WHERE feed_id = $1 AND status = 'open'", [feed.id]);
+    expect(open).toHaveLength(0);
+  });
+
+  it("nhãn đêm nói rõ ngày trả phòng, không để người đọc tự đoán", () => {
+    expect(nightsLabel("2026-11-06", "2026-11-09")).toBe("3 đêm, từ đêm 06/11/2026 đến đêm 08/11/2026 (khách trả phòng 09/11/2026)");
+    expect(nightsLabel("2026-11-13", "2026-11-14")).toBe("đêm 13/11/2026");
   });
 });
