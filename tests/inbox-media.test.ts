@@ -25,6 +25,8 @@ afterAll(() => {
   fs.rmSync(uploadDir, { recursive: true, force: true });
 });
 beforeEach(async () => {
+  // UPLOAD_DIR là biến của cả tiến trình; tệp test khác có thể đã đổi nó. Giành lại trước mỗi bài.
+  process.env.UPLOAD_DIR = uploadDir;
   fixture = await makeFixture();
 });
 

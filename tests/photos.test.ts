@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query, queryOne } from "@/lib/db";
+import { setClock } from "@/lib/time";
 import { createBooking, setStayStatus } from "@/modules/booking/service";
 import { acceptTask, assignTask, inspectTask, startTask, toggleChecklistItem } from "@/modules/cleaning/service";
 import { readDimensions, sniffImage } from "@/modules/photos/image";
@@ -60,6 +61,18 @@ async function taskInProgress(f: Fixture) {
 
 const countFiles = (dir: string): number =>
   fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? countFiles(path.join(dir, e.name)) : 1), 0) : 0;
+
+/**
+ * Ghim đồng hồ trước kỳ ở trong bài (01/10/2026).
+ * Các bài này viết ngày cứng; để chạy theo giờ thật thì tới ngày đó là booking thành quá khứ,
+ * việc dọn không sinh nữa và cả loạt bài đổ — đã xảy ra ngày 05/10/2026.
+ */
+beforeEach(() => {
+  // UPLOAD_DIR là biến của cả tiến trình; tệp test khác có thể đã đổi nó. Giành lại trước mỗi bài.
+  process.env.UPLOAD_DIR = uploadDir;
+  setClock(() => new Date("2026-09-25T08:00:00Z"));
+});
+afterEach(() => setClock(null));
 
 describe("Ảnh bằng chứng — nhận dạng file", () => {
   it("đọc định dạng theo nội dung, không theo đuôi; đọc kích thước PNG/JPEG từ header", () => {

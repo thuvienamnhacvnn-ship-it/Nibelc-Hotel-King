@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setClock } from "@/lib/time";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { query, queryOne } from "@/lib/db";
 import { applyChangeRequest, createBooking, requestChange, updateBookingDetails } from "@/modules/booking/service";
 import { bookingInput, expectCode, makeFixture, runWorker, tasksFor } from "./helpers";
@@ -9,6 +10,14 @@ async function bookingRow(id: string) {
     [id],
   ))!;
 }
+
+/**
+ * Ghim đồng hồ trước kỳ ở trong bài (01/10/2026).
+ * Các bài này viết ngày cứng; để chạy theo giờ thật thì tới ngày đó là booking thành quá khứ,
+ * việc dọn không sinh nữa và cả loạt bài đổ — đã xảy ra ngày 05/10/2026.
+ */
+beforeEach(() => setClock(() => new Date("2026-09-25T08:00:00Z")));
+afterEach(() => setClock(null));
 
 describe("Yêu cầu thay đổi tách khỏi thay đổi đã xác nhận", () => {
   it("yêu cầu đổi ngày đang chờ không sửa booking thật", async () => {

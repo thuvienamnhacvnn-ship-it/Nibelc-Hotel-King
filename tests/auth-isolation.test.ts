@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { setClock } from "@/lib/time";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { query } from "@/lib/db";
 import { redactSecrets } from "@/modules/audit/audit";
 import { hashPassword, verifyPassword } from "@/modules/auth/password";
@@ -6,6 +7,14 @@ import { actorFromToken, login } from "@/modules/auth/sessions";
 import { applyChangeRequest, createBooking, requestChange, updateBookingDetails } from "@/modules/booking/service";
 import { assignTask } from "@/modules/cleaning/service";
 import { bookingInput, expectCode, makeFixture, runWorker, tasksFor, uid } from "./helpers";
+
+/**
+ * Ghim đồng hồ trước kỳ ở trong bài (01/10/2026).
+ * Các bài này viết ngày cứng; để chạy theo giờ thật thì tới ngày đó là booking thành quá khứ,
+ * việc dọn không sinh nữa và cả loạt bài đổ — đã xảy ra ngày 05/10/2026.
+ */
+beforeEach(() => setClock(() => new Date("2026-09-25T08:00:00Z")));
+afterEach(() => setClock(null));
 
 describe("Phân quyền và cách ly tổ chức", () => {
   it("người của tổ chức khác không đọc/sửa được booking", async () => {
