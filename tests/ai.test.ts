@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { query, queryOne } from "@/lib/db";
 import { AiError, callTool } from "@/modules/ai/claude";
-import { redactForAi } from "@/modules/ai/redact";
+import { numberCandidates, redactForAi } from "@/modules/ai/redact";
 import { composeGuestReply } from "@/modules/inbox/ai-compose";
 import { generateWebhookToken, hashWebhookToken } from "@/modules/inbox/evolution";
 import { ingestInboundMessage } from "@/modules/inbox/service";
@@ -98,6 +98,27 @@ describe("che thông tin cá nhân trước khi gửi AI", () => {
     expect(out).not.toContain("4111111111111111");
   });
 });
+
+  it("mã đặt phòng đã xác minh thì KHÔNG bị che, số điện thoại vẫn bị che", () => {
+    // Mã Booking.com là 10 chữ số liền, trùng dạng số điện thoại. Không giữ lại thì trợ lý chép
+    // "[số điện thoại]" vào câu trả lời gửi người thật — đã xảy ra 04/10/2026 với chị Dịu.
+    const text = "mã 6857205481 · Booking · gọi em 0376287499 nhé";
+    const checkCo = redactForAi(text, ["6857205481"]);
+    expect(checkCo).toContain("6857205481");
+    expect(checkCo).not.toContain("0376287499");
+
+    // Không có trong danh sách xác minh thì vẫn che như cũ — không nới luật theo hình dạng.
+    const checkKhong = redactForAi(text);
+    expect(checkKhong).not.toContain("6857205481");
+  });
+
+  it("liệt kê đúng các dãy số đáng đem đi tra mã đặt phòng", () => {
+    const ung = numberCandidates("mã 6857205481 và HM1005, ngày 2026-10-04, số 0376287499");
+    expect(ung).toContain("6857205481");
+    expect(ung).toContain("0376287499");
+    // Mã dạng chữ+số không phải dãy số thuần nên không nằm trong danh sách đem tra.
+    expect(ung.some((x) => x.includes("HM"))).toBe(false);
+  });
 
 describe("trợ lý AI soạn nháp khách", () => {
   it("công tắc chưa bật ⇒ không gọi Claude, bot quay về tra từ khoá", async () => {

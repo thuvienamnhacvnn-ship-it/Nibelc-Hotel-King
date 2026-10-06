@@ -1,7 +1,7 @@
 import { query, queryOne, withTx } from "@/lib/db";
 import { formatDateVi, todayOps } from "@/lib/time";
 import { AiError, aiConfigured, callTool, staffModel } from "@/modules/ai/claude";
-import { redactForAi } from "@/modules/ai/redact";
+import { numberCandidates, redactForAi } from "@/modules/ai/redact";
 import { isPaused } from "@/modules/automation/switches";
 import { ROLE_LABELS, type Role } from "@/modules/auth/permissions";
 
@@ -125,6 +125,20 @@ async function pendingConversations(): Promise<Pending[]> {
     p.inbound.push({ id: r.id, body: r.body, createdAt: r.createdAt, attachments: r.attachments ?? [] });
   }
   return [...byConv.values()];
+}
+
+/**
+ * Trong đống chữ này, dãy số nào là MÃ ĐẶT PHÒNG có thật? Tra bảng booking rồi giữ lại,
+ * không thì bộ che tưởng là số điện thoại và che mất (mã Booking.com là 10 chữ số liền).
+ */
+async function knownRefs(orgId: string, text: string): Promise<string[]> {
+  const ung = numberCandidates(text);
+  if (!ung.length) return [];
+  const rows = await query<{ external_ref: string }>(
+    "SELECT DISTINCT external_ref FROM bookings WHERE org_id = $1 AND external_ref = ANY($2::text[])",
+    [orgId, ung],
+  );
+  return rows.map((r) => r.external_ref);
 }
 
 /** Số liệu vận hành hôm nay để trợ lý trả lời có căn cứ (không đưa tên khách ra ngoài). */
@@ -391,7 +405,7 @@ export async function askAssistantOnce(orgId: string, question: string, asName =
   const snapshot = await opsSnapshot(orgId);
   const user = buildAssistPrompt({
     where: `nhắn riêng với ${asName}`,
-    conversation: `${asName}: ${redactForAi(question)}`,
+    conversation: `${asName}: ${redactForAi(question, await knownRefs(orgId, question))}`,
     snapshot,
     roster: await teamRoster(orgId),
   });
@@ -453,9 +467,10 @@ export async function runStaffAssist(): Promise<StaffAssistResult> {
         [p.conversationId, MAX_CONTEXT_MESSAGES],
       );
       const snapshot = await opsSnapshot(p.orgId);
+      const giuMa = await knownRefs(p.orgId, history.map((m) => m.body ?? "").join("\n"));
       const conversation = history
         .reverse()
-        .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "")} ${describeAttachments(m.attachments ?? [])}`.trimEnd())
+        .map((m) => `${m.direction === "in" ? (m.author_name ?? "Nhân viên") : "Dương Quá"}: ${redactForAi(m.body ?? "", giuMa)} ${describeAttachments(m.attachments ?? [])}`.trimEnd())
         .join("\n");
 
       const user = buildAssistPrompt({
